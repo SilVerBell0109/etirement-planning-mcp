@@ -1,0 +1,76 @@
+# 완전 통합 설치 가이드
+
+## 전체 프로젝트 구조
+
+```
+retirement-planning-mcp/
+│
+├── mcp_server_jeoklip/              # 적립메이트 서버
+│   ├── __init__.py                  # 진입점 (main 함수)
+│   ├── __main__.py                  # 실행 엔트리
+│   └── server.py                    # 핵심 로직 (6 Tools)
+│       ├── collect_user_info        # 정보 수집
+│       ├── generate_scenarios       # 시나리오 생성
+│       ├── calculate_capital        # 자본 계산
+│       ├── project_assets           # 자산 예측
+│       ├── analyze_gap              # 격차 분석
+│       └── optimize_savings         # 저축 최적화
+│
+├── mcp_server_tooja/                # 투자메이트 서버
+│   ├── __init__.py
+│   ├── __main__.py
+│   └── server.py                    # 핵심 로직 (5 Tools)
+│       ├── assess_risk_profile      # 리스크 평가
+│       ├── generate_portfolios      # 포트폴리오 생성
+│       ├── adjust_volatility        # 변동성 조정
+│       ├── build_implementation     # 실행 계획
+│       └── monitor_performance      # 성과 모니터링
+│
+├── mcp_server_inchul/               # 인출메이트 서버
+│   ├── __init__.py
+│   ├── __main__.py
+│   └── server.py                    # 핵심 로직 (6 Tools)
+│       ├── analyze_asset_structure  # 자산 구조 분석
+│       ├── optimize_baseline        # 인출 기본선
+│       ├── manage_guardrails        # 가드레일 관리
+│       ├── optimize_tax_sequence    # 절세 순서
+│       ├── manage_buckets           # 버킷 전략
+│       └── create_execution         # 실행 계획
+│
+├── tests/                           # 테스트 코드
+│   ├── test_jeoklip.py             # 적립메이트 테스트
+│   ├── test_tooja.py               # 투자메이트 테스트
+│   └── test_inchul.py              # 인출메이트 테스트
+│
+├── docs/                            # 문서 (선택사항)
+│   ├── API.md
+│   ├── EXAMPLES.md
+│   └── TROUBLESHOOTING.md
+│
+├── requirements.txt                 # Python 의존성
+├── setup.py                         # 패키지 설정
+├── README.md                        # 프로젝트 메인 문서
+├── INSTALLATION_GUIDE.md            # 상세 설치 가이드
+├── QUICK_START.md                   # 빠른 시작
+└── .gitignore                       # Git 무시 파일
+```
+
+## 단계별 완전 설치
+
+### 1단계: 환경 준비
+
+```bash
+# Python 버전 확인
+python --version  # 3.11 이상 필요
+
+# 작업 디렉토리 생성
+mkdir retirement-planning-mcp
+cd retirement-planning-mcp
+
+# Git 초기화 (선택사항)
+git init
+```
+
+### 2단계: 가상환경 설정
+
+**
