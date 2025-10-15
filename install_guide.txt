@@ -1,4 +1,4 @@
-# 은퇴 설계 AI Agent MCP Server 설치 가이드
+# 은퇴 설계 AI Agent MCP Server 설치 가이드 (python3/pip3 기준)
 
 ## 📋 목차
 1. [시스템 요구사항](#시스템-요구사항)
@@ -13,12 +13,14 @@
 
 ## 시스템 요구사항
 
-- **Python**: 3.11 이상
-- **운영체제**: Windows, macOS, Linux
+- **Python**: 3.10 이상 (3.11 권장)
+- **운영체제**: macOS, Linux, Windows
 - **필수 패키지**:
   - mcp >= 0.9.0
   - pydantic >= 2.0.0
   - numpy >= 1.24.0
+
+⚠️ **중요:** Python 3.9 이하는 지원하지 않습니다. (match-case 문법 사용)
 
 ---
 
@@ -50,7 +52,35 @@ retirement-planning-mcp/
 
 ## 설치 단계
 
-### 1. 프로젝트 폴더 생성
+### 1. Python 버전 확인
+
+```bash
+# Python 버전 확인 (3.10 이상이어야 함)
+python3 --version
+
+# 3.9 이하라면 최신 버전 설치 필요
+```
+
+**Python 설치 (필요한 경우):**
+
+**macOS (Homebrew):**
+```bash
+brew install python@3.11
+```
+
+**macOS (Conda):**
+```bash
+conda create -n retirement-mcp python=3.11 -y
+conda activate retirement-mcp
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install python3.11 python3-pip
+```
+
+### 2. 프로젝트 폴더 생성
 
 ```bash
 # 작업 디렉토리 생성
@@ -58,42 +88,90 @@ mkdir retirement-planning-mcp
 cd retirement-planning-mcp
 ```
 
-### 2. 가상환경 설정 (권장)
+### 3. 가상환경 설정 (Conda 사용 권장)
 
-**Windows:**
+**Conda 환경 (권장):**
 ```bash
-python -m venv venv
-venv\Scripts\activate
+# Python 3.11 환경 생성
+conda create -n retirement-mcp python=3.11 -y
+
+# 환경 활성화
+conda activate retirement-mcp
+
+# Python 버전 확인
+python3 --version  # 3.11.x 확인
 ```
 
-**macOS/Linux:**
+**venv 사용 (대안):**
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+# Python 3.11로 가상환경 생성
+python3.11 -m venv venv
+
+# 활성화
+source venv/bin/activate  # macOS/Linux
+# 또는
+venv\Scripts\activate     # Windows
+
+# Python 버전 확인
+python3 --version
 ```
 
-### 3. 의존성 설치
+### 4. 의존성 설치
 
 ```bash
-pip install --upgrade pip
-pip install mcp pydantic numpy
+# pip3 업그레이드
+pip3 install --upgrade pip
+
+# 필수 패키지 설치
+pip3 install "mcp>=0.9.0"
+pip3 install "pydantic>=2.0.0"
+pip3 install "numpy>=1.24.0"
+
+# 또는 한번에
+pip3 install "mcp>=0.9.0" "pydantic>=2.0.0" "numpy>=1.24.0"
 ```
 
-또는 requirements.txt 사용:
+**requirements.txt 사용:**
 ```bash
-pip install -r requirements.txt
+# requirements.txt 파일 생성
+cat > requirements.txt << EOF
+mcp>=0.9.0
+pydantic>=2.0.0
+numpy>=1.24.0
+EOF
+
+# 설치
+pip3 install -r requirements.txt
 ```
 
-### 4. 서버 파일 구조 생성
+### 5. 설치 확인
+
+```bash
+# 설치된 패키지 확인
+pip3 list | grep mcp
+pip3 list | grep pydantic
+pip3 list | grep numpy
+
+# 임포트 테스트
+python3 -c "import mcp; print('MCP:', mcp.__version__)"
+python3 -c "import pydantic; print('Pydantic:', pydantic.__version__)"
+python3 -c "import numpy; print('NumPy:', numpy.__version__)"
+
+# 또는 한번에
+python3 -c "import mcp, pydantic, numpy; print('✓ All packages installed!')"
+```
+
+### 6. 서버 파일 구조 생성
 
 각 서버별로 폴더를 만들고 파일을 생성합니다:
 
-#### 적립메이트 (mcp_server_jeoklip)
+#### A. 적립메이트 (mcp_server_jeoklip)
+
 ```bash
-mkdir mcp_server_jeoklip
+mkdir -p mcp_server_jeoklip
 cd mcp_server_jeoklip
 
-# 파일 생성 (내용은 제공된 artifacts 참고)
+# 파일 생성
 touch __init__.py
 touch __main__.py
 touch server.py
@@ -101,9 +179,15 @@ touch server.py
 cd ..
 ```
 
-#### 투자메이트 (mcp_server_tooja)
+각 파일에 제공된 코드 복사:
+- `__init__.py`: Artifact `jeoklip_init`
+- `__main__.py`: Artifact `jeoklip_main`
+- `server.py`: Artifact `jeoklip_server`
+
+#### B. 투자메이트 (mcp_server_tooja)
+
 ```bash
-mkdir mcp_server_tooja
+mkdir -p mcp_server_tooja
 cd mcp_server_tooja
 
 touch __init__.py
@@ -113,9 +197,15 @@ touch server.py
 cd ..
 ```
 
-#### 인출메이트 (mcp_server_inchul)
+각 파일에 제공된 코드 복사:
+- `__init__.py`: Artifact `tooja_init`
+- `__main__.py`: Artifact `tooja_main`
+- `server.py`: Artifact `tooja_server`
+
+#### C. 인출메이트 (mcp_server_inchul)
+
 ```bash
-mkdir mcp_server_inchul
+mkdir -p mcp_server_inchul
 cd mcp_server_inchul
 
 touch __init__.py
@@ -125,130 +215,177 @@ touch server.py
 cd ..
 ```
 
-### 5. 각 파일에 코드 복사
+각 파일에 제공된 코드 복사:
+- `__init__.py`: Artifact `inchul_init`
+- `__main__.py`: Artifact `inchul_main`
+- `server.py`: Artifact `inchul_server`
 
-앞서 생성한 artifacts의 코드를 각 파일에 복사합니다:
+### 7. 로컬 테스트
 
-- `server.py`: 각 서버의 메인 로직
-- `__init__.py`: 진입점 설정
-- `__main__.py`: 실행 엔트리
+```bash
+# 프로젝트 루트에서 각 서버 테스트
+python3 -m mcp_server_jeoklip  # Ctrl+C로 종료
+python3 -m mcp_server_tooja    # Ctrl+C로 종료
+python3 -m mcp_server_inchul   # Ctrl+C로 종료
+```
+
+정상 작동시 서버가 대기 상태로 들어갑니다.
 
 ---
 
 ## Claude Desktop 연동
 
-### 1. Claude Desktop 설정 파일 위치
+### 1. 설정 파일 위치
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**macOS:**
+```bash
+~/Library/Application Support/Claude/claude_desktop_config.json
+```
 
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+**Windows:**
+```
+%APPDATA%\Claude\claude_desktop_config.json
+```
 
-### 2. 설정 파일 편집
+**Linux:**
+```bash
+~/.config/Claude/claude_desktop_config.json
+```
 
-`claude_desktop_config.json` 파일을 열어 다음 내용을 추가합니다:
+### 2. 프로젝트 절대 경로 확인
+
+```bash
+# 프로젝트 루트에서 실행
+pwd
+
+# 출력 예시:
+# /Users/silverbell/retirement-planning-mcp
+```
+
+이 경로를 복사해두세요!
+
+### 3. Python3 경로 확인
+
+```bash
+# 사용 중인 python3 경로 확인
+which python3
+
+# Conda 환경 사용시:
+# /opt/anaconda3/envs/retirement-mcp/bin/python3
+# 
+# Homebrew Python:
+# /opt/homebrew/bin/python3
+#
+# 시스템 Python:
+# /usr/bin/python3
+```
+
+### 4. 설정 파일 편집
+
+`claude_desktop_config.json` 파일을 열어 다음 내용 추가:
+
+**방법 1: python3 명령 사용 (간단)**
 
 ```json
 {
   "mcpServers": {
     "jeoklip": {
-      "command": "python",
+      "command": "python3",
       "args": ["-m", "mcp_server_jeoklip"],
-      "cwd": "/절대/경로/to/retirement-planning-mcp",
-      "env": {}
+      "cwd": "/Users/silverbell/retirement-planning-mcp"
     },
     "tooja": {
-      "command": "python",
+      "command": "python3",
       "args": ["-m", "mcp_server_tooja"],
-      "cwd": "/절대/경로/to/retirement-planning-mcp",
-      "env": {}
+      "cwd": "/Users/silverbell/retirement-planning-mcp"
     },
     "inchul": {
-      "command": "python",
+      "command": "python3",
       "args": ["-m", "mcp_server_inchul"],
-      "cwd": "/절대/경로/to/retirement-planning-mcp",
-      "env": {}
+      "cwd": "/Users/silverbell/retirement-planning-mcp"
     }
   }
 }
 ```
 
-⚠️ **중요**: `/절대/경로/to/retirement-planning-mcp`를 실제 프로젝트 경로로 변경하세요.
-
-**경로 확인 방법:**
-```bash
-# 프로젝트 폴더에서 실행
-pwd  # macOS/Linux
-cd   # Windows (현재 디렉토리 표시)
-```
-
-### 3. 가상환경 사용시 설정 (선택사항)
-
-가상환경을 사용하는 경우, `python` 대신 가상환경의 python 경로를 사용:
+**방법 2: 절대 경로 사용 (권장 - 더 안정적)**
 
 ```json
 {
   "mcpServers": {
     "jeoklip": {
-      "command": "/절대/경로/to/retirement-planning-mcp/venv/bin/python",
+      "command": "/opt/anaconda3/envs/retirement-mcp/bin/python3",
       "args": ["-m", "mcp_server_jeoklip"],
-      "cwd": "/절대/경로/to/retirement-planning-mcp"
+      "cwd": "/Users/silverbell/retirement-planning-mcp"
+    },
+    "tooja": {
+      "command": "/opt/anaconda3/envs/retirement-mcp/bin/python3",
+      "args": ["-m", "mcp_server_tooja"],
+      "cwd": "/Users/silverbell/retirement-planning-mcp"
+    },
+    "inchul": {
+      "command": "/opt/anaconda3/envs/retirement-mcp/bin/python3",
+      "args": ["-m", "mcp_server_inchul"],
+      "cwd": "/Users/silverbell/retirement-planning-mcp"
     }
   }
 }
 ```
 
-**Windows 가상환경 경로:**
-```json
-"command": "C:\\경로\\to\\retirement-planning-mcp\\venv\\Scripts\\python.exe"
+⚠️ **중요:**
+- `command`에 `which python3`로 확인한 경로 입력
+- `cwd`에 `pwd`로 확인한 프로젝트 절대 경로 입력
+
+### 5. JSON 문법 검증
+
+```bash
+# JSON 파일 문법 확인
+python3 -m json.tool ~/Library/Application\ Support/Claude/claude_desktop_config.json
+
+# 오류가 없으면 올바른 JSON
 ```
 
-### 4. Claude Desktop 재시작
+### 6. Claude Desktop 재시작
 
-설정 저장 후 Claude Desktop을 완전히 종료하고 다시 실행합니다.
+1. Claude Desktop **완전 종료** (Cmd+Q on Mac)
+2. 다시 시작
+3. 새 대화 시작
 
 ---
 
 ## 테스트 실행
 
-### 1. 개별 서버 수동 테스트
-
-각 서버를 직접 실행하여 오류 확인:
+### 1. 서버 개별 테스트
 
 ```bash
-# 적립메이트
-python -m mcp_server_jeoklip
+# 프로젝트 루트에서
+cd ~/retirement-planning-mcp
 
-# 투자메이트
-python -m mcp_server_tooja
-
-# 인출메이트
-python -m mcp_server_inchul
+# 각 서버 테스트 (Ctrl+C로 종료)
+python3 -m mcp_server_jeoklip
+python3 -m mcp_server_tooja
+python3 -m mcp_server_inchul
 ```
 
-정상 작동시 서버가 대기 상태로 들어갑니다. `Ctrl+C`로 종료.
-
-### 2. 단위 테스트 실행
+### 2. 단위 테스트 실행 (선택사항)
 
 ```bash
-# 테스트 폴더 생성
-mkdir tests
-cd tests
+# tests 폴더 생성
+mkdir -p tests
 
-# 테스트 파일 복사 (제공된 test_*.py 파일들)
-
-# 테스트 실행
-python test_jeoklip.py
-python test_tooja.py
-python test_inchul.py
+# 테스트 파일 생성 및 실행
+python3 tests/test_jeoklip.py
+python3 tests/test_tooja.py
+python3 tests/test_inchul.py
 ```
 
 ---
 
 ## 사용 예시
 
-Claude Desktop에서 다음과 같이 질문할 수 있습니다:
+Claude Desktop에서 다음과 같이 질문:
 
-### 적립메이트 사용 예시
+### 적립메이트
 
 ```
 안녕하세요. 은퇴 준비를 하고 싶은데 도와주세요.
@@ -266,7 +403,7 @@ Claude Desktop에서 다음과 같이 질문할 수 있습니다:
 지금부터 얼마나 저축해야 할까요?
 ```
 
-### 투자메이트 사용 예시
+### 투자메이트
 
 ```
 은퇴를 위한 투자 포트폴리오를 만들고 싶어요.
@@ -281,7 +418,7 @@ IRP, 연금저축 모두 활용 가능
 각각 추천해주세요.
 ```
 
-### 인출메이트 사용 예시
+### 인출메이트
 
 ```
 65세에 은퇴했고 다음과 같은 상황입니다:
@@ -304,274 +441,168 @@ IRP, 연금저축 모두 활용 가능
 
 ### 1. "ModuleNotFoundError: No module named 'mcp'"
 
-**해결방법:**
+**원인:** mcp 패키지가 설치되지 않음
+
+**해결:**
 ```bash
-pip install mcp
+pip3 install mcp
 ```
 
-### 2. 서버가 Claude Desktop에서 보이지 않음
+### 2. "SyntaxError: invalid syntax" (match 구문)
+
+**원인:** Python 3.9 이하 버전 사용
+
+**해결:**
+```bash
+# Python 버전 확인
+python3 --version
+
+# 3.9 이하라면 3.11로 업그레이드
+conda create -n retirement-mcp python=3.11 -y
+conda activate retirement-mcp
+```
+
+### 3. 서버가 Claude Desktop에서 보이지 않음
 
 **체크리스트:**
+- [ ] Python 3.10 이상 사용 중인가?
 - [ ] `claude_desktop_config.json` 경로가 올바른가?
-- [ ] JSON 문법 오류가 없는가? (쉼표, 따옴표 확인)
-- [ ] 절대 경로가 정확한가?
+- [ ] JSON 문법 오류가 없는가?
+- [ ] `cwd` 경로가 절대경로인가?
+- [ ] `command`의 python3 경로가 올바른가?
 - [ ] Claude Desktop을 재시작했는가?
 
 **확인 방법:**
 ```bash
-# JSON 문법 검증
-python -m json.tool claude_desktop_config.json
-```
+# 1. Python 경로 확인
+which python3
 
-### 3. "Permission denied" 오류
+# 2. 프로젝트 경로 확인
+pwd
 
-**Windows:**
-```bash
-# 관리자 권한으로 실행
-```
+# 3. JSON 검증
+python3 -m json.tool claude_desktop_config.json
 
-**macOS/Linux:**
-```bash
-chmod +x venv/bin/python
+# 4. 서버 직접 실행 테스트
+python3 -m mcp_server_jeoklip
 ```
 
 ### 4. Import 오류
 
-**해결방법:**
+**해결:**
 ```bash
-# 프로젝트 루트에서 실행
+# PYTHONPATH 설정
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"  # macOS/Linux
-set PYTHONPATH=%PYTHONPATH%;%CD%          # Windows
+
+# 또는 프로젝트 루트에서 실행
+cd ~/retirement-planning-mcp
+python3 -m mcp_server_jeoklip
 ```
 
-### 5. 한글 인코딩 오류
+### 5. Conda 환경 활성화 안됨
 
-**파일 저장시 UTF-8 인코딩 사용:**
-- VS Code: 하단 바에서 "UTF-8" 선택
-- 다른 에디터: "Save with Encoding" → UTF-8
-
-### 6. numpy 설치 오류
-
-**해결방법:**
 ```bash
-# 특정 버전 설치
-pip install numpy==1.24.0
+# Conda 초기화
+conda init bash  # 또는 zsh
 
-# 또는 최신 버전
-pip install --upgrade numpy
+# 쉘 재시작
+source ~/.bashrc  # 또는 ~/.zshrc
+
+# 환경 활성화
+conda activate retirement-mcp
+```
+
+### 6. pip3와 python3 버전 불일치
+
+```bash
+# python3과 pip3가 같은 버전인지 확인
+python3 --version
+pip3 --version
+
+# 다르다면 python3 -m pip 사용
+python3 -m pip install mcp pydantic numpy
 ```
 
 ---
 
-## 디버깅 팁
+## 환경 변수 설정 (선택사항)
 
-### 1. 서버 로그 확인
+영구적으로 환경 설정:
 
-Claude Desktop 콘솔에서 로그 확인:
-- **macOS**: `Console.app` 열기 → "Claude" 검색
-- **Windows**: 이벤트 뷰어 확인
-
-### 2. 수동 테스트
+**~/.zshrc 또는 ~/.bashrc에 추가:**
 
 ```bash
-# MCP Inspector 사용 (개발자 도구)
-npx @modelcontextprotocol/inspector python -m mcp_server_jeoklip
+# Conda 환경 자동 활성화
+# conda activate retirement-mcp
+
+# 프로젝트 경로 단축키
+alias retirement="cd ~/retirement-planning-mcp && conda activate retirement-mcp"
+
+# 빠른 테스트
+alias test-jeoklip="python3 -m mcp_server_jeoklip"
+alias test-tooja="python3 -m mcp_server_tooja"
+alias test-inchul="python3 -m mcp_server_inchul"
 ```
 
-### 3. 자세한 에러 확인
-
-각 서버 파일에 로깅 추가:
-
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
+적용:
+```bash
+source ~/.zshrc  # 또는 ~/.bashrc
 ```
 
 ---
 
-## 추가 설정
+## 업데이트
 
-### Python 경로 확인
-
-```bash
-# 사용 중인 Python 경로 확인
-which python    # macOS/Linux
-where python    # Windows
-
-# Python 버전 확인
-python --version
-```
-
-### 패키지 설치 확인
+### 패키지 업데이트
 
 ```bash
-pip list | grep mcp
-pip list | grep pydantic
-pip list | grep numpy
+# 환경 활성화
+conda activate retirement-mcp
+
+# 패키지 업데이트
+pip3 install --upgrade mcp pydantic numpy
 ```
 
----
-
-## 성능 최적화
-
-### 1. 가상환경 사용 (권장)
-
-가상환경을 사용하면 패키지 충돌을 방지하고 깨끗한 환경 유지:
-
-```bash
-python -m venv venv
-source venv/bin/activate  # macOS/Linux
-venv\Scripts\activate     # Windows
-```
-
-### 2. 캐싱 활용
-
-자주 사용하는 계산 결과를 캐싱하여 성능 향상.
-
----
-
-## 보안 고려사항
-
-### 1. 개인정보 보호
-
-- 사용자 데이터는 로컬에만 저장
-- 외부 서버로 전송하지 않음
-- 민감한 금융 정보 암호화 권장
-
-### 2. 데이터 저장
-
-현재 버전은 메모리에만 저장. 영구 저장을 원한다면:
-
-```python
-# CSV 저장 예시
-import csv
-
-def save_user_data(data):
-    with open('user_data.csv', 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=data.keys())
-        writer.writeheader()
-        writer.writerow(data)
-```
-
----
-
-## 업데이트 및 유지보수
-
-### 서버 업데이트
+### 코드 업데이트
 
 ```bash
 # Git 사용시
 git pull origin main
 
 # 수동 업데이트시
-# 새 코드를 각 server.py 파일에 복사
+# 새 server.py 코드를 복사
 
 # Claude Desktop 재시작
 ```
 
-### 의존성 업데이트
+---
 
-```bash
-pip install --upgrade mcp pydantic numpy
-```
+## 완전 설치 체크리스트
+
+- [ ] Python 3.10+ 설치 확인
+- [ ] Conda 환경 생성 (retirement-mcp)
+- [ ] 환경 활성화
+- [ ] pip3로 mcp, pydantic, numpy 설치
+- [ ] 3개 서버 폴더 생성
+- [ ] 각 폴더에 3개 파일 작성
+- [ ] python3 -m 테스트 성공
+- [ ] which python3로 경로 확인
+- [ ] pwd로 프로젝트 경로 확인
+- [ ] claude_desktop_config.json 수정
+- [ ] JSON 문법 검증
+- [ ] Claude Desktop 재시작
+- [ ] 테스트 질문으로 확인
 
 ---
 
-## FAQ
-
-### Q1: 여러 서버를 동시에 사용할 수 있나요?
-
-**A:** 네, Claude Desktop은 여러 MCP 서버를 동시에 로드할 수 있습니다. 설정 파일에 모두 추가하면 됩니다.
-
-### Q2: 서버 응답이 느린데 어떻게 하나요?
-
-**A:** 
-- 복잡한 계산의 경우 numpy 최적화 사용
-- 불필요한 로깅 제거
-- 캐싱 구현
-
-### Q3: 다른 사람과 공유할 수 있나요?
-
-**A:** 
-- 코드는 공유 가능
-- 개인 금융 데이터는 공유하지 마세요
-- GitHub 등에 올릴 때 .gitignore 설정 필요
-
-### Q4: 계산 결과가 정확한가요?
-
-**A:**
-- 기본 금융 공식 사용
-- 실제 투자 결정 전 전문가 상담 권장
-- 교육 및 참고용으로 활용
-
-### Q5: 오프라인에서도 작동하나요?
-
-**A:** 네, 모든 계산이 로컬에서 이루어지므로 인터넷 연결 없이도 작동합니다.
-
----
-
-## 다음 단계
-
-### 1. 기능 확장
-
-- 실제 시장 데이터 API 연동
-- 그래프/차트 생성 기능
-- PDF 보고서 생성
-
-### 2. 데이터베이스 연동
-
-```bash
-pip install sqlite3
-# SQLite로 사용자 데이터 영구 저장
-```
-
-### 3. 웹 인터페이스 추가
-
-```bash
-pip install fastapi uvicorn
-# REST API 서버로 확장
-```
-
----
-
-## 참고 자료
+## 추가 리소스
 
 - [MCP 공식 문서](https://modelcontextprotocol.io/)
-- [Claude Desktop 설정 가이드](https://docs.anthropic.com/claude/docs)
-- [Python 가상환경 가이드](https://docs.python.org/3/tutorial/venv.html)
-
----
-
-## 라이선스 및 면책조항
-
-이 소프트웨어는 교육 및 정보 제공 목적으로만 제공됩니다. 
-
-**면책조항:**
-- 실제 투자 결정 전 반드시 전문가와 상담하세요
-- 제공된 계산은 참고용이며 보장되지 않습니다
-- 개인의 재무 상황에 따라 결과가 다를 수 있습니다
-- 저자는 사용으로 인한 손실에 대해 책임지지 않습니다
-
----
-
-## 지원 및 문의
-
-문제가 발생하거나 질문이 있으시면:
-
-1. 먼저 [문제 해결](#문제-해결) 섹션 확인
-2. GitHub Issues에 문제 보고
-3. 상세한 에러 메시지와 환경 정보 포함
-
----
-
-## 변경 이력
-
-### v1.0.0 (2025-01-XX)
-- 적립메이트 초기 출시
-- 투자메이트 초기 출시
-- 인출메이트 초기 출시
-- 기본 금융 계산 엔진 구현
+- [Pydantic 문서](https://docs.pydantic.dev/)
+- [NumPy 문서](https://numpy.org/doc/)
 
 ---
 
 **설치 완료!** 이제 Claude Desktop에서 은퇴 설계 서비스를 사용할 수 있습니다.
+
+문제가 발생하면 위의 [문제 해결](#문제-해결) 섹션을 참고하세요.

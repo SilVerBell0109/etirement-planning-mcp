@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "jeoklip": {
+      "command": "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+      "args": ["-u", "-m", "mcp_server_jeoklip"],
+      "cwd": "/Users/silverbell/Desktop/etirement-planner/etirement-planning-mcp",
+      "env": {
+        "PYTHONPATH": "/Users/silverbell/Desktop/etirement-planner/etirement-planning-mcp"
+      }
+    },
+    "inchul": {
+      "command": "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+      "args": ["-u", "-m", "mcp_server_inchul"],
+      "cwd": "/Users/silverbell/Desktop/etirement-planner/etirement-planning-mcp",
+      "env": {
+        "PYTHONPATH": "/Users/silverbell/Desktop/etirement-planner/etirement-planning-mcp"
+      }
+    },
+    "tooja": {
+      "command": "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+      "args": ["-u", "-m", "mcp_server_tooja"],
+      "cwd": "/Users/silverbell/Desktop/etirement-planner/etirement-planning-mcp",
+      "env": {
+        "PYTHONPATH": "/Users/silverbell/Desktop/etirement-planner/etirement-planning-mcp"
+      }
+    }
+  }
+}
