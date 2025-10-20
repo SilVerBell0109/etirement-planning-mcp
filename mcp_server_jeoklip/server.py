@@ -3,6 +3,9 @@ from enum import Enum
 import json
 from typing import Sequence
 import numpy as np  # type: ignore
+import csv
+import os
+from pathlib import Path
 
 from mcp.server import Server  # type: ignore
 from mcp.server.stdio import stdio_server
@@ -112,7 +115,62 @@ class JeoklipService:
     def __init__(self):
         self.calculator = FinancialCalculator()
         self.user_data = {}
+        # CSV 저장 경로 설정
+        self.csv_dir = Path(__file__).parent
+        self.csv_dir.mkdir(parents=True, exist_ok=True)
 
+    # ========== CSV 저장 기능 (신규 추가) ==========
+    
+    def _save_to_csv(self, user_profile: dict, income_structure: dict,
+                     expense_categories: dict, asset_portfolio: dict) -> str:
+        """사용자 정보를 CSV 파일로 저장"""
+        
+        # 타임스탬프로 파일명 생성
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'user_info_{timestamp}.csv'
+        filepath = self.csv_dir / filename
+        
+        # CSV 데이터 준비
+        csv_data = []
+        
+        # 헤더 및 사용자 프로필 데이터
+        csv_data.append(['수집 시각', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+        csv_data.append([''])  # 빈 줄
+        
+        # 사용자 프로필
+        csv_data.append(['=== 사용자 프로필 ===', ''])
+        for key, value in user_profile.items():
+            csv_data.append([key, value])
+        csv_data.append([''])  # 빈 줄
+        
+        # 소득 구조
+        csv_data.append(['=== 소득 구조 ===', ''])
+        for key, value in income_structure.items():
+            csv_data.append([key, value])
+        csv_data.append([''])  # 빈 줄
+        
+        # 지출 항목
+        csv_data.append(['=== 지출 항목 ===', ''])
+        for key, value in expense_categories.items():
+            csv_data.append([key, value])
+        csv_data.append([''])  # 빈 줄
+        
+        # 자산 포트폴리오
+        csv_data.append(['=== 자산 포트폴리오 ===', ''])
+        total_assets = 0
+        for key, value in asset_portfolio.items():
+            csv_data.append([key, value])
+            if isinstance(value, (int, float)):
+                total_assets += value
+        csv_data.append(['총 자산', total_assets])
+        
+        # CSV 파일 작성
+        with open(filepath, 'w', newline='', encoding='utf-8-sig') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerows(csv_data)
+        
+        return str(filepath)
+    
     # Tool 1: 정보 수집
     def collect_user_info(self, user_profile: dict, income_structure: dict,
                           expense_categories: dict, asset_portfolio: dict) -> dict:
@@ -125,10 +183,22 @@ class JeoklipService:
             'assets': asset_portfolio,
             'collected_at': datetime.now().isoformat()
         }
+        
+        # CSV 파일로 저장 (신규 추가)
+        try:
+            csv_filepath = self._save_to_csv(user_profile, income_structure, 
+                                            expense_categories, asset_portfolio)
+            csv_saved = True
+            csv_message = f'CSV 파일로 저장됨: {csv_filepath}'
+        except Exception as e:
+            csv_saved = False
+            csv_message = f'CSV 저장 실패: {str(e)}'
 
         return {
             'status': 'success',
             'message': '사용자 정보가 성공적으로 수집되었습니다.',
+            'csv_saved': csv_saved,
+            'csv_message': csv_message,
             'summary': {
                 '현재나이': user_profile.get('current_age'),
                 '목표은퇴나이': user_profile.get('target_retirement_age'),
