@@ -3,6 +3,7 @@ from enum import Enum
 import json
 from typing import Sequence
 import numpy as np
+from pathlib import Path
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -10,6 +11,9 @@ from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
 from mcp.shared.exceptions import McpError
 
 from pydantic import BaseModel
+
+# HTML 리포트 생성 모듈 import
+from .html_generator import generate_retirement_report_html
 
 
 class InchulTools(str, Enum):
@@ -19,6 +23,7 @@ class InchulTools(str, Enum):
     OPTIMIZE_TAX_SEQUENCE = "optimize_tax_efficient_sequence"
     MANAGE_BUCKETS = "manage_three_bucket_strategy"
     CREATE_EXECUTION = "create_execution_plan"
+    GENERATE_HTML_REPORT = "generate_complete_html_report"
 
 
 # ========== 데이터 모델 ==========
@@ -106,6 +111,9 @@ class InchulService:
         self.calculator = WithdrawalCalculator()
         self.asset_structure = {}
         self.baseline = {}
+        # HTML 리포트 저장 경로 설정
+        self.html_dir = Path(__file__).parent
+        self.html_dir.mkdir(parents=True, exist_ok=True)
 
     def analyze_retirement_asset_structure(self, liquid_assets: dict,
                                            investment_accounts: dict,
@@ -410,6 +418,92 @@ class InchulService:
             ]
         }
 
+    # ========== 통합 리포트 생성 (신규 추가) ==========
+    
+    def generate_complete_html_report(self, user_info: dict) -> dict:
+        """적립→투자→인출 전체 계획을 수립하고 PDF 변환 가능한 HTML 리포트 생성"""
+        
+        # 1단계: 사용자 정보 파싱
+        current_age = user_info.get('current_age', 40)
+        retirement_age = user_info.get('retirement_age', 65)
+        life_expectancy = user_info.get('life_expectancy', 90)
+        monthly_income = user_info.get('monthly_income', 5000000)
+        monthly_expense = user_info.get('monthly_expense', 3500000)
+        current_assets = user_info.get('current_assets', {})
+        
+        years_to_retirement = retirement_age - current_age
+        retirement_period = life_expectancy - retirement_age
+        annual_expense = monthly_expense * 12
+        
+        # 2단계: 적립 계획 수립
+        # 필요 은퇴자본 계산 (SWR 3.25%)
+        required_capital = annual_expense / 0.0325
+        
+        # 현재 자산의 미래가치 계산
+        total_current_assets = sum(current_assets.values())
+        projected_assets = total_current_assets * ((1.04) ** years_to_retirement)
+        
+        # 자금 격차
+        funding_gap = required_capital - projected_assets
+        
+        # 필요 월 저축액
+        if funding_gap > 0:
+            monthly_savings = (funding_gap * 0.04) / (((1.04 ** years_to_retirement) - 1) / 0.04) / 12
+        else:
+            monthly_savings = 0
+        
+        # 3단계: 투자 전략
+        # 연령 기반 주식 비중
+        equity_ratio = min(70, max(30, 100 - current_age))
+        bond_ratio = 100 - equity_ratio - 20  # 주식 + 채권 + 기타(20%)
+        
+        portfolio = {
+            '주식': equity_ratio,
+            '채권': bond_ratio,
+            '금': 10,
+            '현금': 10
+        }
+        
+        # 4단계: 인출 전략
+        annual_withdrawal = required_capital * 0.0325
+        monthly_withdrawal = annual_withdrawal / 12
+        
+        # 3버킷 전략
+        bucket1 = annual_withdrawal * 2  # 2년분
+        bucket2 = annual_withdrawal * 5  # 5년분
+        bucket3 = required_capital - bucket1 - bucket2
+        
+        # HTML 생성
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        html_content = generate_retirement_report_html(
+            user_info, years_to_retirement, retirement_period,
+            required_capital, projected_assets, funding_gap, monthly_savings,
+            portfolio, annual_withdrawal, monthly_withdrawal,
+            bucket1, bucket2, bucket3
+        )
+        
+        # HTML 파일 저장
+        filename = f'retirement_plan_{timestamp}.html'
+        filepath = self.html_dir / filename
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        return {
+            'status': 'success',
+            'message': '통합 은퇴 계획 리포트가 생성되었습니다.',
+            'html_filepath': str(filepath),
+            'summary': {
+                '현재나이': current_age,
+                '은퇴나이': retirement_age,
+                '필요자본': f'{required_capital:,.0f}원',
+                '예상자산': f'{projected_assets:,.0f}원',
+                '필요월저축': f'{monthly_savings:,.0f}원',
+                '은퇴후월인출': f'{monthly_withdrawal:,.0f}원'
+            }
+        }
+    
+    
     def create_execution_plan(self, withdrawal_strategy: dict,
                               account_details: dict) -> dict:
         """실행 가능한 월별 인출 계획 및 체크리스트 생성"""
@@ -602,6 +696,29 @@ async def serve() -> None:
                     },
                     "required": ["withdrawal_strategy"]
                 }
+            ),
+            Tool(
+                name=InchulTools.GENERATE_HTML_REPORT.value,
+                description="사용자 정보를 입력받아 적립→투자→인출 전체 계획을 수립하고 PDF 변환 가능한 HTML 리포트를 생성합니다",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "user_info": {
+                            "type": "object",
+                            "description": "사용자 기본 정보 (현재나이, 은퇴나이, 월소득, 월지출, 현재자산 등)",
+                            "properties": {
+                                "current_age": {"type": "integer", "description": "현재 나이"},
+                                "retirement_age": {"type": "integer", "description": "목표 은퇴 나이"},
+                                "life_expectancy": {"type": "integer", "description": "예상 수명"},
+                                "monthly_income": {"type": "number", "description": "월 소득"},
+                                "monthly_expense": {"type": "number", "description": "월 지출"},
+                                "current_assets": {"type": "object", "description": "현재 보유 자산"}
+                            },
+                            "required": ["current_age", "retirement_age", "monthly_income", "monthly_expense", "current_assets"]
+                        }
+                    },
+                    "required": ["user_info"]
+                }
             )
         ]
 
@@ -660,6 +777,11 @@ async def serve() -> None:
                     result = service.create_execution_plan(
                         arguments['withdrawal_strategy'],
                         arguments.get('account_details', {})
+                    )
+
+                case InchulTools.GENERATE_HTML_REPORT.value:
+                    result = service.generate_complete_html_report(
+                        arguments['user_info']
                     )
 
                 case _:
