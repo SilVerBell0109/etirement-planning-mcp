@@ -1,5 +1,15 @@
 {
   "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/silverbell/Desktop",
+        "/Users/silverbell/Documents",
+        "/Users/silverbell/Downloads"
+      ]
+    },
     "jeoklip": {
       "command": "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
       "args": ["-u", "-m", "mcp_server_jeoklip"],
