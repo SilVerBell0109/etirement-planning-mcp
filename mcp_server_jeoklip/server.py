@@ -418,32 +418,6 @@ class JeoklipService:
                     '목표지출_10%감소시': round(monthly_pmt * 0.9, 0)
                 }
             }
-        
-        # 결과 저장 (신규 추가)
-        self.results['savings_result'] = result
-        
-        # 자동 요약 출력 (신규 추가)
-        if all(v is not None for v in self.results.values()):
-            print("\n" + "="*50)
-            print("📊 모든 계산 완료! 결과를 요약합니다...")
-            print("="*50)
-            
-            try:
-                summary = self.generate_savings_summary(
-                    self.results['user_profile'],
-                    self.results['scenarios_result'],
-                    self.results['capital_result'],
-                    self.results['projection_result'],
-                    self.results['gap_result'],
-                    self.results['savings_result']
-                )
-                # 요약을 결과에 포함
-                result['auto_summary'] = summary
-            except Exception as e:
-                print(f"\n⚠️ 요약 생성 실패: {e}")
-        
-        return result
-
 
 # ========== MCP Server 설정 ==========
 
