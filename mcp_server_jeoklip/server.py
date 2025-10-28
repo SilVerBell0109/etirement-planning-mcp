@@ -118,6 +118,16 @@ class JeoklipService:
         # CSV 저장 경로 설정
         self.csv_dir = Path(__file__).parent
         self.csv_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 결과 누적 저장소 (신규 추가)
+        self.results = {
+            'user_profile': None,
+            'scenarios_result': None,
+            'capital_result': None,
+            'projection_result': None,
+            'gap_result': None,
+            'savings_result': None
+        }
 
     # ========== CSV 저장 기능 (신규 추가) ==========
     
@@ -184,6 +194,9 @@ class JeoklipService:
             'collected_at': datetime.now().isoformat()
         }
         
+        # 결과 저장 (신규 추가)
+        self.results['user_profile'] = user_profile
+        
         # CSV 파일로 저장 (신규 추가)
         try:
             csv_filepath = self._save_to_csv(user_profile, income_structure, 
@@ -239,11 +252,16 @@ class JeoklipService:
             }
         }
 
-        return {
+        result = {
             'scenarios': scenarios,
             'recommendation': 'moderate',
             'note': '본인의 위험 성향과 시장 전망에 따라 시나리오를 선택하세요.'
         }
+        
+        # 결과 저장 (신규 추가)
+        self.results['scenarios_result'] = result
+        
+        return result
 
     # Tool 3: 필요 은퇴자본 계산
     def calculate_retirement_capital(self, annual_expense: float,
@@ -266,7 +284,7 @@ class JeoklipService:
         # 의료비 버킷 (연간 지출의 20%)
         medical_reserve = annual_expense * 0.20 * retirement_years / 2
 
-        return {
+        result = {
             'safe_withdrawal_method': {
                 '최소필요자본': round(swr_low, 0),
                 '최대필요자본': round(swr_high, 0),
@@ -277,6 +295,11 @@ class JeoklipService:
             'recommended_total': round((swr_avg + pv_method) / 2 + medical_reserve, 0),
             'note': '두 방법의 평균에 의료비 버킷을 추가한 금액을 권장합니다.'
         }
+        
+        # 결과 저장 (신규 추가)
+        self.results['capital_result'] = result
+        
+        return result
 
     # Tool 4: 은퇴시점 자산 프로젝션
     def project_retirement_assets(self, current_assets: dict,
@@ -307,7 +330,7 @@ class JeoklipService:
 
         total_projected = sum(projected_assets.values())
 
-        return {
+        result = {
             'total_projected_assets': round(total_projected, 0),
             'breakdown': projected_assets,
             'assumptions': {
@@ -315,6 +338,11 @@ class JeoklipService:
                 '기간': f"{years_to_retirement}년"
             }
         }
+        
+        # 결과 저장 (신규 추가)
+        self.results['projection_result'] = result
+        
+        return result
 
     # Tool 5: 자금격차 분석
     def analyze_funding_gap(self, required_capital: float,
@@ -326,7 +354,7 @@ class JeoklipService:
 
         status = '충분' if gap <= 0 else '부족'
 
-        return {
+        result = {
             'required_capital': round(required_capital, 0),
             'projected_assets': round(projected_assets, 0),
             'gap_amount': round(gap, 0),
@@ -334,6 +362,11 @@ class JeoklipService:
             'status': status,
             'message': f"은퇴자금이 {abs(round(gap/10000, 0))}만원 {status}합니다."
         }
+        
+        # 결과 저장 (신규 추가)
+        self.results['gap_result'] = result
+        
+        return result
 
     # Tool 6: 저축계획 최적화
     def optimize_savings_plan(self, funding_gap: float,
@@ -343,48 +376,73 @@ class JeoklipService:
         """추가 저축 필요액 계산 및 실행 가능성 분석"""
 
         if funding_gap <= 0:
-            return {
+            result = {
                 'status': 'sufficient',
                 'message': '현재 계획으로 충분합니다.',
                 'monthly_savings_needed': 0,
                 'annual_savings_needed': 0
             }
-
-        pre_ret_rate = scenario.get('pre_retirement_return', 0.040)
-
-        # PMT 계산 (필요한 정기 저축액)
-        annual_pmt = self.calculator.calculate_pmt(
-            funding_gap, pre_ret_rate, years_to_retirement
-        )
-        monthly_pmt = annual_pmt / 12
-
-        # 실행 가능성 점수
-        if current_monthly_savings > 0:
-            feasibility = min(
-                100, (current_monthly_savings / monthly_pmt) * 100)
         else:
-            feasibility = 0
+            pre_ret_rate = scenario.get('pre_retirement_return', 0.040)
 
-        # 권장사항
-        recommendations = []
-        if feasibility < 80:
-            recommendations.append("은퇴 나이를 1-2년 늦추는 것을 고려하세요.")
-            recommendations.append("목표 생활비를 10% 줄이는 것을 검토하세요.")
-            recommendations.append("세제혜택 계좌(IRP, 연금저축)를 우선 활용하세요.")
+            # PMT 계산 (필요한 정기 저축액)
+            annual_pmt = self.calculator.calculate_pmt(
+                funding_gap, pre_ret_rate, years_to_retirement
+            )
+            monthly_pmt = annual_pmt / 12
 
-        return {
-            'monthly_savings_needed': round(monthly_pmt, 0),
-            'annual_savings_needed': round(annual_pmt, 0),
-            'current_monthly_savings': current_monthly_savings,
-            'additional_needed': round(monthly_pmt - current_monthly_savings, 0),
-            'feasibility_score': round(feasibility, 1),
-            'recommendations': recommendations,
-            'alternatives': {
-                '은퇴_1년_연장시': round(monthly_pmt * years_to_retirement / (years_to_retirement + 1), 0),
-                '은퇴_2년_연장시': round(monthly_pmt * years_to_retirement / (years_to_retirement + 2), 0),
-                '목표지출_10%감소시': round(monthly_pmt * 0.9, 0)
+            # 실행 가능성 점수
+            if current_monthly_savings > 0:
+                feasibility = min(
+                    100, (current_monthly_savings / monthly_pmt) * 100)
+            else:
+                feasibility = 0
+
+            # 권장사항
+            recommendations = []
+            if feasibility < 80:
+                recommendations.append("은퇴 나이를 1-2년 늦추는 것을 고려하세요.")
+                recommendations.append("목표 생활비를 10% 줄이는 것을 검토하세요.")
+                recommendations.append("세제혜택 계좌(IRP, 연금저축)를 우선 활용하세요.")
+
+            result = {
+                'monthly_savings_needed': round(monthly_pmt, 0),
+                'annual_savings_needed': round(annual_pmt, 0),
+                'current_monthly_savings': current_monthly_savings,
+                'additional_needed': round(monthly_pmt - current_monthly_savings, 0),
+                'feasibility_score': round(feasibility, 1),
+                'recommendations': recommendations,
+                'alternatives': {
+                    '은퇴_1년_연장시': round(monthly_pmt * years_to_retirement / (years_to_retirement + 1), 0),
+                    '은퇴_2년_연장시': round(monthly_pmt * years_to_retirement / (years_to_retirement + 2), 0),
+                    '목표지출_10%감소시': round(monthly_pmt * 0.9, 0)
+                }
             }
-        }
+        
+        # 결과 저장 (신규 추가)
+        self.results['savings_result'] = result
+        
+        # 자동 요약 출력 (신규 추가)
+        if all(v is not None for v in self.results.values()):
+            print("\n" + "="*50)
+            print("📊 모든 계산 완료! 결과를 요약합니다...")
+            print("="*50)
+            
+            try:
+                summary = self.generate_savings_summary(
+                    self.results['user_profile'],
+                    self.results['scenarios_result'],
+                    self.results['capital_result'],
+                    self.results['projection_result'],
+                    self.results['gap_result'],
+                    self.results['savings_result']
+                )
+                # 요약을 결과에 포함
+                result['auto_summary'] = summary
+            except Exception as e:
+                print(f"\n⚠️ 요약 생성 실패: {e}")
+        
+        return result
 
 
 # ========== MCP Server 설정 ==========
