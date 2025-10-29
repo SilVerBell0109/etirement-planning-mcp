@@ -123,6 +123,16 @@ class JeoklipService:
         # CSV 저장 경로 설정
         self.csv_dir = Path(__file__).parent
         self.csv_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 결과 누적 저장소 (신규 추가)
+        self.results = {
+            'user_profile': None,
+            'scenarios_result': None,
+            'capital_result': None,
+            'projection_result': None,
+            'gap_result': None,
+            'savings_result': None
+        }
 
     # ========== CSV 저장 기능 (신규 추가) ==========
     
@@ -189,6 +199,9 @@ class JeoklipService:
             'collected_at': datetime.now().isoformat()
         }
         
+        # 결과 저장 (신규 추가)
+        self.results['user_profile'] = user_profile
+        
         # CSV 파일로 저장 (신규 추가)
         try:
             csv_filepath = self._save_to_csv(user_profile, income_structure, 
@@ -251,7 +264,7 @@ class JeoklipService:
             }
         }
 
-        return {
+        result = {
             'scenarios': scenarios,
             'market_characteristics': {
                 'kospi_volatility': KOR_2025.MKT.kospi_volatility,
@@ -262,6 +275,11 @@ class JeoklipService:
             'recommendation': 'baseline',
             'note': '한국 시장 특성을 반영한 시나리오입니다. 본인의 위험 성향과 시장 전망에 따라 선택하세요.'
         }
+        
+        # 결과 저장 (신규 추가)
+        self.results['scenarios_result'] = result
+        
+        return result
 
     # Tool 3: 필요 은퇴자본 계산 (한국 특화)
     def calculate_retirement_capital(self, annual_expense: float,
@@ -287,7 +305,7 @@ class JeoklipService:
         # 한국형 의료비 버킷 (연령 가중)
         medical_reserve = self._calculate_medical_reserve_kor(annual_expense, retirement_years)
 
-        return {
+        result = {
             'safe_withdrawal_method': {
                 '최소필요자본': round(swr_low, 0),
                 '최대필요자본': round(swr_high, 0),
@@ -308,6 +326,11 @@ class JeoklipService:
             },
             'note': f'기간 {retirement_years}년에 맞춘 SWR 조정과 한국 의료비 특성을 반영했습니다.'
         }
+        
+        # 결과 저장 (신규 추가)
+        self.results['capital_result'] = result
+        
+        return result
 
     def _swr_band_kor(self, years: int) -> dict:
         """한국형 SWR 범위 (기간 중심 밴드)"""
@@ -354,7 +377,7 @@ class JeoklipService:
 
         total_projected = sum(projected_assets.values())
 
-        return {
+        result = {
             'total_projected_assets': round(total_projected, 0),
             'breakdown': projected_assets,
             'assumptions': {
@@ -362,6 +385,11 @@ class JeoklipService:
                 '기간': f"{years_to_retirement}년"
             }
         }
+        
+        # 결과 저장 (신규 추가)
+        self.results['projection_result'] = result
+        
+        return result
 
     # Tool 5: 자금격차 분석
     def analyze_funding_gap(self, required_capital: float,
@@ -373,7 +401,7 @@ class JeoklipService:
 
         status = '충분' if gap <= 0 else '부족'
 
-        return {
+        result = {
             'required_capital': round(required_capital, 0),
             'projected_assets': round(projected_assets, 0),
             'gap_amount': round(gap, 0),
@@ -381,6 +409,11 @@ class JeoklipService:
             'status': status,
             'message': f"은퇴자금이 {abs(round(gap/10000, 0))}만원 {status}합니다."
         }
+        
+        # 결과 저장 (신규 추가)
+        self.results['gap_result'] = result
+        
+        return result
 
     # Tool 6: 저축계획 최적화 (한국 특화)
     def optimize_savings_plan(self, funding_gap: float,
@@ -449,7 +482,6 @@ class JeoklipService:
         adjusted_feasibility = base_feasibility * (0.5 + scenario_weight * 0.5)
         
         return min(100, adjusted_feasibility)
-
 
 # ========== MCP Server 설정 ==========
 
