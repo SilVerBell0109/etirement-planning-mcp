@@ -3,6 +3,12 @@ from enum import Enum
 import json
 from typing import Sequence
 import numpy as np
+import sys
+import os
+
+# 중앙 설정 모듈 import
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
+from financial_constants_2025 import KOR_2025, marginal_rate_from_brackets, get_healthcare_factor
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -54,8 +60,10 @@ class TaxSequence(BaseModel):
 class WithdrawalCalculator:
 
     @staticmethod
-    def calculate_swr(portfolio_value: float, swr_rate: float = 0.035) -> float:
+    def calculate_swr(portfolio_value: float, swr_rate: float = None) -> float:
         """안전인출률(SWR) 기반 연간 인출액 계산"""
+        if swr_rate is None:
+            swr_rate = KOR_2025.SWR.base_moderate  # 3.5%
         return portfolio_value * swr_rate
 
     @staticmethod
@@ -71,30 +79,33 @@ class WithdrawalCalculator:
         return pv
 
     @staticmethod
-    def apply_guardrail(current_balance: float, target_balance: float,
-                        current_withdrawal: float, threshold: float = 0.20) -> dict:
-        """Guyton-Klinger 가드레일 규칙 적용"""
+    def apply_guardrails(init_port_val: float, cur_port_val: float, 
+                        cur_withdrawal: float, threshold: float = None,
+                        inc_rate: float = None, dec_rate: float = None) -> dict:
+        """가드레일 적용"""
+        if threshold is None:
+            threshold = KOR_2025.GUARD.upper_threshold  # 25%
+        if inc_rate is None:
+            inc_rate = KOR_2025.GUARD.inc_rate  # 10%
+        if dec_rate is None:
+            dec_rate = KOR_2025.GUARD.dec_rate  # 10%
+            
+        drift = (cur_port_val - init_port_val) / max(1e-9, init_port_val)
+        out = cur_withdrawal
 
-        variance = (current_balance - target_balance) / target_balance
-
-        if variance > threshold:
+        if drift >= threshold:
+            out *= (1 + inc_rate)
             adjustment = 'increase'
-            new_withdrawal = current_withdrawal * 1.10
-            message = f'자산이 목표보다 {variance*100:.1f}% 높아 인출액을 10% 증액합니다.'
-        elif variance < -threshold:
+        elif drift <= -threshold:
+            out *= (1 - dec_rate)
             adjustment = 'decrease'
-            new_withdrawal = current_withdrawal * 0.90
-            message = f'자산이 목표보다 {abs(variance)*100:.1f}% 낮아 인출액을 10% 감액합니다.'
         else:
             adjustment = 'maintain'
-            new_withdrawal = current_withdrawal
-            message = '목표 범위 내에 있어 현재 인출액을 유지합니다.'
 
         return {
             'adjustment': adjustment,
-            'new_withdrawal': new_withdrawal,
-            'variance': variance,
-            'message': message
+            'new_withdrawal': out,
+            'variance': drift
         }
 
 
@@ -157,20 +168,21 @@ class InchulService:
                                      bridge_period_years: int,
                                      retirement_period: int,
                                      withdrawal_method: str = "fixed_real") -> dict:
-        """SWR 기반 인출 기본선 설정"""
+        """SWR 기반 인출 기본선 설정 (한국 특화)"""
 
-        swr_conservative = 0.030
-        swr_moderate = 0.0325
-        swr_aggressive = 0.035
+        # 기간별 SWR 조정
+        swr_conservative = KOR_2025.SWR.adjust_by_duration(retirement_period) - 0.005
+        swr_moderate = KOR_2025.SWR.adjust_by_duration(retirement_period)
+        swr_aggressive = KOR_2025.SWR.adjust_by_duration(retirement_period) + 0.005
 
-        annual_conservative = self.calculator.calculate_swr(
-            total_portfolio_value, swr_conservative)
-        annual_moderate = self.calculator.calculate_swr(
-            total_portfolio_value, swr_moderate)
-        annual_aggressive = self.calculator.calculate_swr(
-            total_portfolio_value, swr_aggressive)
+        conservative_result = self.calculator.calculate_swr_amount(
+            total_portfolio_value, retirement_period, swr_conservative)
+        moderate_result = self.calculator.calculate_swr_amount(
+            total_portfolio_value, retirement_period, swr_moderate)
+        aggressive_result = self.calculator.calculate_swr_amount(
+            total_portfolio_value, retirement_period, swr_aggressive)
 
-        recommended_annual = annual_moderate
+        recommended_annual = moderate_result['annual']
         recommended_monthly = recommended_annual / 12
 
         if bridge_period_years > 0:
@@ -189,42 +201,47 @@ class InchulService:
 
         return {
             'withdrawal_scenarios': {
-                '보수적_3.0%': {
-                    '연간': round(annual_conservative, 0),
-                    '월간': round(annual_conservative / 12, 0)
+                '보수적': {
+                    '연간': round(conservative_result['annual'], 0),
+                    '월간': round(conservative_result['annual'] / 12, 0),
+                    '인출률': f"{conservative_result['rate']*100:.2f}%"
                 },
-                '균형적_3.25%': {
-                    '연간': round(annual_moderate, 0),
-                    '월간': round(annual_moderate / 12, 0)
+                '균형적': {
+                    '연간': round(moderate_result['annual'], 0),
+                    '월간': round(moderate_result['annual'] / 12, 0),
+                    '인출률': f"{moderate_result['rate']*100:.2f}%"
                 },
-                '적극적_3.5%': {
-                    '연간': round(annual_aggressive, 0),
-                    '월간': round(annual_aggressive / 12, 0)
+                '적극적': {
+                    '연간': round(aggressive_result['annual'], 0),
+                    '월간': round(aggressive_result['annual'] / 12, 0),
+                    '인출률': f"{aggressive_result['rate']*100:.2f}%"
                 }
             },
             'recommended': {
                 '연간인출액': round(recommended_annual, 0),
                 '월인출액': round(recommended_monthly, 0),
-                '인출률': '3.25%',
+                '인출률': f"{moderate_result['rate']*100:.2f}%",
                 '예상지속기간': f"{retirement_period}년"
             },
             'bridge_period_analysis': {
                 '브릿지기간': f"{bridge_period_years}년",
                 '추가필요자금': round(bridge_gap, 0)
             } if bridge_period_years > 0 else None,
-            'note': '균형적 3.25% 인출률을 기본으로 권장합니다. 시장 상황에 따라 조정 가능합니다.'
+            'note': f'기간 {retirement_period}년에 맞춘 {moderate_result["rate"]*100:.2f}% 인출률을 기본으로 권장합니다.'
         }
 
     def manage_guardrail_system(self, current_portfolio_value: float,
                                 target_portfolio_value: float,
                                 current_withdrawal: float,
-                                essential_expenses: float) -> dict:
-        """Guyton-Klinger 가드레일 규칙 적용"""
+                                essential_expenses: float,
+                                inflation_rate: float = 0.0) -> dict:
+        """한국형 가드레일 규칙 적용"""
 
-        adjustment = self.calculator.apply_guardrail(
-            current_portfolio_value,
-            target_portfolio_value,
-            current_withdrawal
+        adjustment = self.calculator.apply_guardrails_kor(
+            target_portfolio_value,  # 초기 목표값
+            current_portfolio_value,  # 현재값
+            current_withdrawal,
+            inflation_rate
         )
 
         new_withdrawal = adjustment['new_withdrawal']
@@ -250,14 +267,15 @@ class InchulService:
                 'warning': warning_message
             },
             'message': adjustment['message'],
-            'next_review_date': '1년 후'
+            'next_review_date': '1년 후',
+            'inflation_adjustment': f"인플레이션 {inflation_rate*100:.1f}% 반영" if inflation_rate > 0 else "인플레이션 미반영"
         }
 
     def optimize_tax_efficient_sequence(self, annual_withdrawal_need: float,
                                         account_balances: dict,
                                         guaranteed_income: float,
-                                        tax_brackets: list) -> dict:
-        """세금 효율적인 계좌별 인출 순서 및 금액 결정"""
+                                        tax_brackets: list = None) -> dict:
+        """한국 세제 최적화 인출 순서 및 금액 결정"""
 
         remaining_need = annual_withdrawal_need - guaranteed_income
 
@@ -269,60 +287,52 @@ class InchulService:
                 'message': '보장소득만으로 충분합니다.'
             }
 
-        withdrawal_sequence = []
-        remaining = remaining_need
+        # 한국 세제 최적화 로직
+        result = self._optimal_withdrawal_split_kor(
+            account_balances.get('일반과세계좌', 0),
+            account_balances.get('연금계좌', 0),
+            remaining_need
+        )
 
-        taxable_balance = account_balances.get('일반과세계좌', 0)
-        if taxable_balance > 0 and remaining > 0:
-            withdrawal_from_taxable = min(remaining, taxable_balance * 0.5)
+        withdrawal_sequence = []
+
+        # 1) 연금 분리과세 우선
+        if result['pension_separated'] > 0:
             withdrawal_sequence.append({
                 'order': 1,
-                'account': '일반과세계좌 (원금)',
-                'amount': round(withdrawal_from_taxable, 0),
-                'tax_rate': '0% (원금)',
-                'reason': '원금은 비과세'
+                'account': '연금계좌 (분리과세)',
+                'amount': round(result['pension_separated'], 0),
+                'tax_amount': round(result['pension_separated'] * 0.033, 0),
+                'tax_rate': '3.3%',
+                'reason': '분리과세 한도 내 저세율 적용'
             })
-            remaining -= withdrawal_from_taxable
 
-        if taxable_balance > 0 and remaining > 0:
-            withdrawal_from_gain = min(remaining, taxable_balance * 0.3)
-            estimated_tax = withdrawal_from_gain * 0.154
+        # 2) 연금 종합과세
+        if result['pension_comprehensive'] > 0:
+            comp_tax = result['pension_comprehensive'] * marginal_rate_from_brackets(
+                result['pension_comprehensive'], KOR_2025.TAX.comprehensive_income_brackets)
             withdrawal_sequence.append({
                 'order': 2,
-                'account': '일반과세계좌 (이익금)',
-                'amount': round(withdrawal_from_gain, 0),
-                'tax_amount': round(estimated_tax, 0),
-                'tax_rate': '15.4%',
-                'reason': '배당소득세 적용'
+                'account': '연금계좌 (종합과세)',
+                'amount': round(result['pension_comprehensive'], 0),
+                'tax_amount': round(comp_tax, 0),
+                'tax_rate': f"{marginal_rate_from_brackets(result['pension_comprehensive'], KOR_2025.TAX.comprehensive_income_brackets)*100:.1f}%",
+                'reason': '분리과세 초과분 종합과세'
             })
-            remaining -= withdrawal_from_gain
 
-        pension_balance = account_balances.get('연금계좌', 0)
-        if pension_balance > 0 and remaining > 0:
-            withdrawal_from_pension = min(remaining, pension_balance * 0.1)
-            estimated_tax = withdrawal_from_pension * 0.033
+        # 3) 일반과세계좌
+        if result['taxable'] > 0:
             withdrawal_sequence.append({
                 'order': 3,
-                'account': '연금계좌',
-                'amount': round(withdrawal_from_pension, 0),
-                'tax_amount': round(estimated_tax, 0),
-                'tax_rate': '3.3% ~ 5.5%',
-                'reason': '연금소득세 낮음, 장기 유지 필요'
-            })
-            remaining -= withdrawal_from_pension
-
-        if remaining > 0:
-            withdrawal_sequence.append({
-                'order': 4,
-                'account': '부동산 매각/주택연금',
-                'amount': round(remaining, 0),
-                'note': '필요시 고려'
+                'account': '일반과세계좌',
+                'amount': round(result['taxable'], 0),
+                'tax_amount': round(result['taxable'] * KOR_2025.TAX.interest_dividend, 0),
+                'tax_rate': f"{KOR_2025.TAX.interest_dividend*100:.1f}%",
+                'reason': '금융소득 분리과세'
             })
 
-        total_withdrawal = sum(
-            [item['amount'] for item in withdrawal_sequence if 'amount' in item])
-        total_tax = sum([item.get('tax_amount', 0)
-                        for item in withdrawal_sequence])
+        total_withdrawal = result['pension_separated'] + result['pension_comprehensive'] + result['taxable']
+        total_tax = result['estimated_tax']
 
         return {
             'annual_withdrawal_need': round(annual_withdrawal_need, 0),
@@ -334,23 +344,55 @@ class InchulService:
             'after_tax_amount': round(total_withdrawal - total_tax, 0),
             'effective_tax_rate': f"{round(total_tax / total_withdrawal * 100, 2) if total_withdrawal > 0 else 0}%",
             'recommendations': [
-                '일반계좌 원금부터 인출하여 세금 최소화',
-                '연금계좌는 장기 유지하며 최소한만 인출',
+                '연금 1,500만원까지 분리과세 우선 활용',
+                '일반과세계좌는 15.4% 원천징수 적용',
                 '세율 구간을 초과하지 않도록 주의'
             ]
         }
 
+    def _optimal_withdrawal_split_kor(self, taxable_balance: float, 
+                                     pension_balance: float, 
+                                     annual_need: float) -> dict:
+        """한국 세제 최적화 인출 분배"""
+        T = KOR_2025.TAX
+        
+        # 1) 연금 분리과세 한도 우선
+        pension_sep_take = min(T.pension_separated_cap, pension_balance, annual_need)
+        pension_sep_tax = pension_sep_take * 0.033  # 3.3% 가정
+        
+        remaining = annual_need - pension_sep_take
+        
+        # 2) 나머지는 연금 종합 vs 과세계좌 중 최적 조합
+        pension_comp_take = min(remaining, max(0, pension_balance - pension_sep_take))
+        pension_comp_tax = pension_comp_take * marginal_rate_from_brackets(
+            pension_comp_take, T.comprehensive_income_brackets)
+        
+        rem2 = remaining - pension_comp_take
+        taxable_take = min(rem2, taxable_balance)
+        taxable_tax = taxable_take * T.interest_dividend
+        
+        total_tax = pension_sep_tax + pension_comp_tax + taxable_tax
+        
+        return {
+            'pension_separated': pension_sep_take,
+            'pension_comprehensive': pension_comp_take,
+            'taxable': taxable_take,
+            'estimated_tax': total_tax
+        }
+
     def manage_three_bucket_strategy(self, total_portfolio: float,
                                      annual_withdrawal: float,
-                                     market_condition: str) -> dict:
-        """시퀀스 리스크 완화를 위한 3버킷 전략"""
+                                     market_condition: str,
+                                     age: int = 65) -> dict:
+        """한국형 3버킷 전략 (2-8-나머지 + 의료비)"""
 
-        bucket1_years = 2
-        bucket2_years = 5
+        # 한국형 버킷 구조
+        bucket_plan = self._bucket_plan_kor(annual_withdrawal, age, 30)  # 30년 가정
 
-        bucket1_amount = annual_withdrawal * bucket1_years
-        bucket2_amount = annual_withdrawal * bucket2_years
+        bucket1_amount = bucket_plan['cash']
+        bucket2_amount = bucket_plan['income'] 
         bucket3_amount = total_portfolio - bucket1_amount - bucket2_amount
+        healthcare_amount = bucket_plan['healthcare']
 
         if market_condition == 'bear':
             strategy = {
@@ -384,13 +426,13 @@ class InchulService:
             'bucket_allocation': {
                 'bucket1_현금단기채': {
                     '금액': round(bucket1_amount, 0),
-                    '기간': f'{bucket1_years}년분',
+                    '기간': f'{KOR_2025.BUCK.cash_years}년분',
                     '자산': '현금, MMF, 단기채권',
                     '목적': '즉시 인출 가능, 생활비 1순위'
                 },
                 'bucket2_중기채배당': {
                     '금액': round(bucket2_amount, 0),
-                    '기간': f'{bucket2_years}년분',
+                    '기간': f'{KOR_2025.BUCK.income_years}년분',
                     '자산': '중기채권, 배당주, 리츠',
                     '목적': '하락장 완충, bucket1 보충'
                 },
@@ -399,15 +441,42 @@ class InchulService:
                     '기간': '나머지',
                     '자산': '주식, 성장형 ETF',
                     '목적': '장기 성장, 회복기 활용'
+                },
+                '의료비_버킷': {
+                    '금액': round(healthcare_amount, 0),
+                    '기간': '30년분 (연령 가중)',
+                    '자산': '의료비 전용 저축',
+                    '목적': '고령화 대비 의료비'
                 }
             },
             'market_strategy': strategy,
             'bucket1_depletion_months': round(bucket1_amount / (annual_withdrawal / 12), 0) if annual_withdrawal > 0 else 0,
+            'healthcare_ratio': f"{KOR_2025.BUCK.healthcare_base_ratio*100:.1f}%",
             'recommendations': [
                 'bucket1이 1년치 미만으로 줄면 즉시 보충',
                 '하락장에서는 bucket3 매도를 최대한 지연',
-                '상승장에서는 적극적으로 이익 실현'
+                '상승장에서는 적극적으로 이익 실현',
+                '의료비 버킷은 연령별 가중치 적용'
             ]
+        }
+
+    def _bucket_plan_kor(self, annual_expense: float, age: int, horizon_years: int) -> dict:
+        """한국형 버킷 계획"""
+        b = KOR_2025.BUCK
+        cash_amt = annual_expense * b.cash_years
+        income_amt = annual_expense * b.income_years
+        growth_amt = max(0, annual_expense * max(0, horizon_years - (b.cash_years + b.income_years)))
+
+        # 의료비: 연비 15% 기본 × 은퇴기간 × 연령 가중치
+        base_med = annual_expense * b.healthcare_base_ratio
+        age_factor = get_healthcare_factor(age)
+        med_total = base_med * min(30, horizon_years) * age_factor
+
+        return {
+            'cash': cash_amt,
+            'income': income_amt, 
+            'growth': growth_amt,
+            'healthcare': med_total
         }
 
     def create_execution_plan(self, withdrawal_strategy: dict,

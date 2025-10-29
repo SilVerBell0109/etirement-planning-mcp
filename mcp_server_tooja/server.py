@@ -3,6 +3,12 @@ from enum import Enum
 import json
 from typing import Sequence
 import numpy as np
+import sys
+import os
+
+# 중앙 설정 모듈 import
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
+from financial_constants_2025 import KOR_2025
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -59,7 +65,7 @@ class ToojaService:
 
     def assess_risk_profile(self, demographic_info: dict, financial_capacity: dict,
                             liquidity_requirements: dict, behavioral_preferences: dict) -> dict:
-        """사용자 투자성향 및 제약조건 분석"""
+        """한국형 투자성향 및 제약조건 분석"""
 
         age = demographic_info.get('age', 40)
         retirement_age = demographic_info.get('retirement_age', 65)
@@ -67,25 +73,29 @@ class ToojaService:
 
         risk_score = behavioral_preferences.get('risk_tolerance_score', 50)
 
+        # 한국형 위험성향 분류
         if risk_score < 40:
             risk_level = 'conservative'
-            max_equity = 0.30
             description = '보수적 - 안정성 우선'
         elif risk_score < 70:
             risk_level = 'moderate'
-            max_equity = 0.50
             description = '중립적 - 균형 추구'
         else:
             risk_level = 'aggressive'
-            max_equity = 0.70
             description = '공격적 - 성장 추구'
 
-        age_based_equity = min((100 - age) / 100, max_equity)
+        # 한국형 주식 상한 (위험점수 기반)
+        max_equity = self._equity_cap_from_risk_kor(risk_score)
+        
+        # 생애주기 반영 (130-나이 규칙 변형)
+        phase = self._determine_life_phase(age, years_to_retirement)
+        age_based_equity = self._lifecycle_equity_allocation(age, phase, max_equity)
 
         self.user_risk_profile = {
             'risk_level': risk_level,
             'max_equity_ratio': round(age_based_equity, 2),
             'years_to_retirement': years_to_retirement,
+            'life_phase': phase,
             'use_irp': behavioral_preferences.get('use_irp', True),
             'use_pension_savings': behavioral_preferences.get('use_pension_savings', True)
         }
@@ -94,67 +104,86 @@ class ToojaService:
             'risk_level': risk_level,
             'description': description,
             'max_equity_ratio': round(age_based_equity * 100, 1),
-            'investment_constraints': {
+            'life_phase': phase,
+            'korean_investment_constraints': {
                 '주식_최대비중': f"{round(age_based_equity * 100, 1)}%",
                 '채권_최소비중': f"{round((1 - age_based_equity) * 100, 1)}%",
-                '세제혜택계좌_활용': 'IRP, 연금저축 우선' if self.user_risk_profile['use_irp'] else '일반계좌'
+                '국내주식_비중': f"{KOR_2025.MKT.domestic_equity_ratio * 100:.0f}%",
+                '해외주식_비중': f"{KOR_2025.MKT.foreign_equity_ratio * 100:.0f}%",
+                '세제혜택계좌_활용': 'IRP, 연금저축 우선' if self.user_risk_profile['use_irp'] else '일반계좌',
+                '리츠_권장비중': f"{KOR_2025.MKT.reit_ratio * 100:.0f}%"
             },
-            'recommendation': f'{years_to_retirement}년의 투자기간을 고려하여 {risk_level} 포트폴리오를 권장합니다.'
+            'recommendation': f'{years_to_retirement}년의 투자기간과 {phase} 단계를 고려하여 {risk_level} 포트폴리오를 권장합니다.'
         }
+
+    def _equity_cap_from_risk_kor(self, risk_score: int) -> float:
+        """한국형 위험점수 → 주식 상한"""
+        return max(0.30, min(0.80, 0.30 + (risk_score / 100) * 0.50))
+
+    def _determine_life_phase(self, age: int, years_to_retirement: int) -> str:
+        """생애주기 단계 결정"""
+        if years_to_retirement > 15:
+            return "accumulation"
+        elif years_to_retirement > 5:
+            return "transition"
+        else:
+            return "retirement"
+
+    def _lifecycle_equity_allocation(self, age: int, phase: str, max_equity: float) -> float:
+        """생애주기 반영 주식 배분"""
+        if phase == "accumulation":
+            base_eq = min(0.90, (130 - age) / 100)
+        elif phase == "transition":
+            base_eq = min(0.70, (120 - age) / 100)
+        else:
+            base_eq = min(0.60, (110 - age) / 100)
+        
+        return max(0.20, min(max_equity, base_eq))
 
     def generate_three_tier_portfolios(self, risk_constraints: dict) -> dict:
-        """보수형/중립형/성장형 3가지 포트폴리오 생성"""
+        """한국형 3가지 포트폴리오 생성 (국내/해외 분할 반영)"""
 
         max_equity = risk_constraints.get('max_equity_ratio', 0.50)
+        risk_level = risk_constraints.get('risk_level', 'moderate')
+        life_phase = risk_constraints.get('life_phase', 'accumulation')
 
-        portfolios = {
-            'conservative': {
-                'portfolio_name': '보수형 포트폴리오',
-                'asset_allocation': {
-                    '채권': 55,
-                    '주식': min(20, int(max_equity * 100)),
-                    '금': 10,
-                    '현금': 10,
-                    '대체투자': 5
-                },
-                'expected_annual_return': 4.5,
-                'expected_volatility': 8.0,
-                'characteristics': '안정적 수익, 낮은 변동성, 원금보존 중시'
-            },
-            'moderate': {
-                'portfolio_name': '중립형 포트폴리오',
-                'asset_allocation': {
-                    '채권': 40,
-                    '주식': min(35, int(max_equity * 100)),
-                    '금': 10,
-                    '현금': 10,
-                    '대체투자': 5
-                },
-                'expected_annual_return': 6.0,
-                'expected_volatility': 12.0,
-                'characteristics': '균형잡힌 수익과 위험, 중도적 접근'
-            },
-            'aggressive': {
-                'portfolio_name': '성장형 포트폴리오',
-                'asset_allocation': {
-                    '채권': 30,
-                    '주식': min(50, int(max_equity * 100)),
-                    '금': 10,
-                    '현금': 5,
-                    '대체투자': 5
-                },
-                'expected_annual_return': 7.5,
-                'expected_volatility': 16.0,
-                'characteristics': '높은 성장 잠재력, 변동성 감수'
+        portfolios = {}
+        
+        for portfolio_type in ['conservative', 'moderate', 'aggressive']:
+            # 한국형 자산 배분 계산
+            allocation = self._lifecycle_allocation_kor(
+                risk_constraints.get('age', 40), 
+                portfolio_type, 
+                life_phase, 
+                risk_constraints.get('risk_score', 50)
+            )
+            
+            portfolios[portfolio_type] = {
+                'portfolio_name': f'{portfolio_type.title()}형 포트폴리오',
+                'asset_allocation': allocation,
+                'expected_annual_return': self._expected_return_kor(portfolio_type),
+                'expected_volatility': self._expected_volatility_kor(portfolio_type),
+                'characteristics': self._portfolio_characteristics_kor(portfolio_type),
+                'korean_considerations': {
+                    '국내주식_비중': f"{allocation.get('국내주식', 0)}%",
+                    '해외주식_비중': f"{allocation.get('해외주식', 0)}%",
+                    '리츠_비중': f"{allocation.get('리츠', 0)}%",
+                    '세제혜택_활용': 'IRP/연금저축 우선 배치 권장'
+                }
             }
-        }
 
         self.base_portfolios = portfolios
 
         return {
             'portfolios': portfolios,
-            'recommended': 'moderate',
-            'note': '본인의 위험성향과 투자목표에 따라 선택하거나 조합하세요.',
+            'recommendation': 'moderate',
+            'korean_market_guidelines': {
+                '국내주식_기준': f"{KOR_2025.MKT.domestic_equity_ratio * 100:.0f}%",
+                '해외주식_기준': f"{KOR_2025.MKT.foreign_equity_ratio * 100:.0f}%",
+                '리츠_권장': f"{KOR_2025.MKT.reit_ratio * 100:.0f}%",
+                '변동성_특성': f"코스피 {KOR_2025.MKT.kospi_volatility * 100:.0f}%, 국채 {KOR_2025.MKT.bond_volatility * 100:.0f}%"
+            },
+            'note': '한국 시장 특성과 생애주기를 반영한 포트폴리오입니다. 본인의 위험성향과 투자목표에 따라 선택하세요.',
             'selection_guide': {
                 'conservative': '안정성이 최우선, 변동성을 최소화하고 싶은 경우',
                 'moderate': '적절한 수익과 안정성의 균형을 원하는 경우',
@@ -162,46 +191,122 @@ class ToojaService:
             }
         }
 
+    def _lifecycle_allocation_kor(self, age: int, risk_level: str, phase: str, risk_score: int) -> dict:
+        """한국형 생애주기 자산 배분"""
+        # 기본 주식 비중
+        if phase == "accumulation":
+            base_eq = min(0.90, (130 - age) / 100)
+        elif phase == "transition":
+            base_eq = min(0.70, (120 - age) / 100)
+        else:
+            base_eq = min(0.60, (110 - age) / 100)
+
+        # 위험성향 조정
+        risk_adj = {"conservative": -0.10, "moderate": 0.0, "aggressive": +0.10}[risk_level]
+        cap = self._equity_cap_from_risk_kor(risk_score)
+        eq = max(0.20, min(cap, base_eq + risk_adj))
+
+        # 한국형 국내/해외 분할
+        dom_ratio = KOR_2025.MKT.domestic_equity_ratio
+        for_ratio = KOR_2025.MKT.foreign_equity_ratio
+        reit_ratio = KOR_2025.MKT.reit_ratio
+
+        # 자산 배분 계산
+        bonds = int(round((1 - eq) * 0.65 * 100))
+        stocks = int(round(eq * 100))
+        domestic_stocks = int(round(stocks * dom_ratio))
+        foreign_stocks = stocks - domestic_stocks
+        reits = int(round(reit_ratio * 100))
+        gold = 5
+        alt = 8 if risk_level != "conservative" else 5
+        cash = max(5, 100 - (bonds + stocks + gold + alt))
+
+        return {
+            "채권": bonds,
+            "주식": stocks,
+            "국내주식": domestic_stocks,
+            "해외주식": foreign_stocks,
+            "리츠": reits,
+            "대체투자": alt,
+            "금": gold,
+            "현금": cash
+        }
+
+    def _expected_return_kor(self, portfolio_type: str) -> float:
+        """한국형 기대수익률"""
+        returns = {
+            'conservative': 4.5,
+            'moderate': 6.0,
+            'aggressive': 7.5
+        }
+        return returns[portfolio_type]
+
+    def _expected_volatility_kor(self, portfolio_type: str) -> float:
+        """한국형 기대변동성 (한국 시장 특성 반영)"""
+        volatilities = {
+            'conservative': 8.0,
+            'moderate': 12.0,
+            'aggressive': 16.0
+        }
+        return volatilities[portfolio_type]
+
+    def _portfolio_characteristics_kor(self, portfolio_type: str) -> str:
+        """한국형 포트폴리오 특성"""
+        characteristics = {
+            'conservative': '안정적 수익, 낮은 변동성, 원금보존 중시 (한국 시장 특성 반영)',
+            'moderate': '균형잡힌 수익과 위험, 중도적 접근 (국내/해외 분산)',
+            'aggressive': '높은 성장 잠재력, 변동성 감수 (글로벌 분산)'
+        }
+        return characteristics[portfolio_type]
+
     def adjust_portfolio_volatility(self, base_portfolio: dict,
                                     market_volatility_data: dict) -> dict:
-        """시장 변동성에 따른 포트폴리오 동적 조정"""
+        """한국형 변동성 조정 (코스피 기준)"""
 
         current_volatility = market_volatility_data.get(
-            'current_volatility', 15.0)
-        historical_avg = market_volatility_data.get('historical_average', 15.0)
+            'current_volatility', KOR_2025.MKT.kospi_volatility * 100)
+        historical_avg = market_volatility_data.get('historical_average', KOR_2025.MKT.kospi_volatility * 100)
         volatility_ratio = current_volatility / historical_avg
 
         allocation = base_portfolio.get('asset_allocation', {}).copy()
 
         if volatility_ratio > 1.2:
             regime = 'high_volatility'
-            adjustment = '주식 비중 축소, 채권/금 확대'
+            adjustment = '주식 비중 축소, 채권/금 확대 (한국 시장 고변동성 대응)'
 
             allocation['주식'] = max(10, allocation.get('주식', 0) - 10)
+            allocation['국내주식'] = max(5, allocation.get('국내주식', 0) - 5)
+            allocation['해외주식'] = max(5, allocation.get('해외주식', 0) - 5)
             allocation['채권'] = min(60, allocation.get('채권', 0) + 5)
             allocation['금'] = min(20, allocation.get('금', 0) + 5)
 
         elif volatility_ratio < 0.8:
             regime = 'low_volatility'
-            adjustment = '주식 비중 확대, 성장 기회 포착'
+            adjustment = '주식 비중 확대, 성장 기회 포착 (한국 시장 저변동성 활용)'
 
-            allocation['주식'] = min(60, allocation.get('주식', 0) + 5)
-            allocation['채권'] = max(25, allocation.get('채권', 0) - 3)
+            allocation['주식'] = min(80, allocation.get('주식', 0) + 5)
+            allocation['국내주식'] = min(50, allocation.get('국내주식', 0) + 3)
+            allocation['해외주식'] = min(30, allocation.get('해외주식', 0) + 2)
+            allocation['채권'] = max(20, allocation.get('채권', 0) - 3)
             allocation['현금'] = max(5, allocation.get('현금', 0) - 2)
 
         else:
             regime = 'normal_volatility'
-            adjustment = '기본 배분 유지'
+            adjustment = '기본 배분 유지 (한국 시장 정상 변동성)'
 
         return {
             'volatility_regime': regime,
             'current_volatility': round(current_volatility, 2),
             'historical_average': round(historical_avg, 2),
             'volatility_ratio': round(volatility_ratio, 2),
+            'korean_benchmark': {
+                'kospi_volatility': KOR_2025.MKT.kospi_volatility * 100,
+                'bond_volatility': KOR_2025.MKT.bond_volatility * 100
+            },
             'original_allocation': base_portfolio.get('asset_allocation', {}),
             'adjusted_allocation': allocation,
             'adjustment_description': adjustment,
-            'note': '시장 변동성에 따라 자동으로 포트폴리오를 조정하여 위험을 관리합니다.'
+            'note': '한국 시장(코스피) 변동성에 따라 자동으로 포트폴리오를 조정하여 위험을 관리합니다.'
         }
 
     def build_implementation_roadmap(self, optimized_portfolio: dict,
@@ -257,20 +362,8 @@ class ToojaService:
             }
         ]
 
-        rebalancing_rules = {
-            '정기 리밸런싱': {
-                '주기': '연 1회 (매년 12월)',
-                '방법': '목표 배분 대비 ±5% 이상 차이시 조정'
-            },
-            '긴급 리밸런싱': {
-                '조건': '목표 배분 대비 ±10% 이상 차이 발생',
-                '방법': '즉시 재조정 실시'
-            },
-            '추가 투자시': {
-                '원칙': '비중이 낮은 자산 위주로 매수',
-                '방법': '자동 목표배분 유지'
-            }
-        }
+        # 한국형 리밸런싱 규칙
+        rebalancing_rules = self._korean_rebalancing_rules()
 
         return {
             'account_strategy': account_strategy,
@@ -293,7 +386,8 @@ class ToojaService:
         portfolio_volatility = portfolio_returns.get('volatility', 0.0)
         benchmark_return = benchmark_returns.get('total_return', 0.0)
 
-        risk_free_rate = 0.02
+        # 한국형 성과 평가 기준
+        risk_free_rate = KOR_2025.PERF.risk_free_rate
         if portfolio_volatility > 0:
             sharpe_ratio = (portfolio_return - risk_free_rate) / \
                 portfolio_volatility
@@ -311,14 +405,8 @@ class ToojaService:
         else:
             max_drawdown = 0
 
-        if excess_return > 0.02:
-            performance_grade = 'A (우수)'
-        elif excess_return > 0:
-            performance_grade = 'B (양호)'
-        elif excess_return > -0.02:
-            performance_grade = 'C (보통)'
-        else:
-            performance_grade = 'D (부진)'
+        # 한국형 성과 등급
+        performance_grade = self._korean_performance_grade(excess_return, sharpe_ratio, max_drawdown)
 
         return {
             'period': time_period,
@@ -339,21 +427,71 @@ class ToojaService:
             )
         }
 
+    def _korean_rebalancing_rules(self) -> dict:
+        """한국형 리밸런싱 규칙"""
+        return {
+            '정기 리밸런싱': {
+                '주기': '분기별 검토, 연 1회 실행 (매년 12월)',
+                '방법': '목표 배분 대비 ±5% 이상 차이시 조정',
+                '거래비용_고려': '0.1% 이상시 연기 검토'
+            },
+            '긴급 리밸런싱': {
+                '조건': '목표 배분 대비 ±8% 이상 차이 발생',
+                '방법': '즉시 재조정 실시',
+                '집중도_제한': f"단일 자산 {KOR_2025.REG.max_concentration_ratio*100:.0f}% 이하 유지"
+            },
+            '추가 투자시': {
+                '원칙': '비중이 낮은 자산 위주로 매수',
+                '방법': '자동 목표배분 유지',
+                '세제혜택_우선': 'IRP/연금저축 한도 내 우선 배치'
+            },
+            '한국_특화_규칙': {
+                '국내해외_균형': '국내 60%, 해외 40% 기준 유지',
+                '리츠_비중': f"{KOR_2025.MKT.reit_ratio*100:.0f}% 유지",
+                '변동성_대응': '코스피 변동성 1.2배 이상시 주식 비중 축소'
+            }
+        }
+
+    def _korean_performance_grade(self, excess_return: float, sharpe_ratio: float, max_drawdown: float) -> str:
+        """한국형 성과 등급 평가"""
+        bench = KOR_2025.PERF.sharpe_benchmark
+        mdd_lim = KOR_2025.PERF.mdd_limits
+        
+        if excess_return > 0.02 and sharpe_ratio >= bench['excellent'] and abs(max_drawdown) <= mdd_lim['conservative']:
+            return 'A+ (최우수)'
+        elif excess_return > 0.02 and sharpe_ratio >= bench['good']:
+            return 'A (우수)'
+        elif excess_return > 0 and sharpe_ratio >= bench['ok']:
+            return 'B (양호)'
+        elif excess_return > -0.02 and sharpe_ratio >= bench['weak']:
+            return 'C (보통)'
+        else:
+            return 'D (부진)'
+
     def _generate_performance_recommendations(self, excess_return, sharpe_ratio, max_drawdown):
-        """성과 기반 권장사항 생성"""
+        """한국형 성과 기반 권장사항 생성"""
         recommendations = []
+        bench = KOR_2025.PERF.sharpe_benchmark
+        mdd_lim = KOR_2025.PERF.mdd_limits
 
         if excess_return < 0:
             recommendations.append('벤치마크 대비 저조한 성과. 포트폴리오 점검이 필요합니다.')
 
-        if sharpe_ratio < 0.5:
+        if sharpe_ratio < bench['ok']:
             recommendations.append('위험 대비 수익이 낮습니다. 자산배분 재검토를 권장합니다.')
 
-        if abs(max_drawdown) > 20:
+        if abs(max_drawdown) > mdd_lim['moderate']:
             recommendations.append('큰 낙폭이 발생했습니다. 변동성 관리가 필요합니다.')
 
         if not recommendations:
             recommendations.append('전반적으로 양호한 성과를 보이고 있습니다. 현재 전략을 유지하세요.')
+
+        # 한국 특화 권장사항
+        recommendations.extend([
+            '국내/해외 주식 비중을 60:40으로 유지하세요.',
+            '리츠 비중을 5% 수준으로 유지하세요.',
+            '세제혜택 계좌(IRP, 연금저축)를 최대한 활용하세요.'
+        ])
 
         return recommendations
 

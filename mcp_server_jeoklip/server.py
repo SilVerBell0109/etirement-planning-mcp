@@ -5,7 +5,12 @@ from typing import Sequence
 import numpy as np  # type: ignore
 import csv
 import os
+import sys
 from pathlib import Path
+
+# 중앙 설정 모듈 import
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
+from financial_constants_2025 import KOR_2025
 
 from mcp.server import Server  # type: ignore
 from mcp.server.stdio import stdio_server
@@ -208,75 +213,117 @@ class JeoklipService:
             }
         }
 
-    # Tool 2: 경제 시나리오 생성
+    # Tool 2: 경제 시나리오 생성 (한국 특화)
     def generate_economic_scenarios(self) -> dict:
-        """보수/기준/공격 3가지 경제 시나리오 생성"""
+        """한국 경제 시나리오 생성 (중앙 설정 기반)"""
 
+        # 한국 시장 변동성 반영
         scenarios = {
-            'conservative': {
+            'pessimistic': {
                 'scenario_name': '보수 시나리오',
-                'inflation_rate': 0.020,
-                'pre_retirement_return': 0.025,
-                'post_retirement_return': 0.015,
-                'wage_growth_rate': 0.030,
-                'description': '안정적이지만 보수적인 가정'
+                'inflation_rate': KOR_2025.ECON.pessimistic['inflation_rate'],
+                'pre_retirement_return': KOR_2025.ECON.pessimistic['pre_ret'],
+                'post_retirement_return': KOR_2025.ECON.pessimistic['post_ret'],
+                'wage_growth_rate': KOR_2025.ECON.pessimistic['wage'],
+                'real_return': KOR_2025.ECON.pessimistic['real_ret'],
+                'probability': KOR_2025.ECON.pessimistic['p'],
+                'description': '안정적이지만 보수적인 가정 (한국 시장 특성 반영)'
             },
-            'moderate': {
+            'baseline': {
                 'scenario_name': '기준 시나리오',
-                'inflation_rate': 0.025,
-                'pre_retirement_return': 0.040,
-                'post_retirement_return': 0.025,
-                'wage_growth_rate': 0.040,
-                'description': '균형잡힌 중도적 가정'
+                'inflation_rate': KOR_2025.ECON.baseline['inflation_rate'],
+                'pre_retirement_return': KOR_2025.ECON.baseline['pre_ret'],
+                'post_retirement_return': KOR_2025.ECON.baseline['post_ret'],
+                'wage_growth_rate': KOR_2025.ECON.baseline['wage'],
+                'real_return': KOR_2025.ECON.baseline['real_ret'],
+                'probability': KOR_2025.ECON.baseline['p'],
+                'description': '균형잡힌 중도적 가정 (한국 시장 특성 반영)'
             },
-            'aggressive': {
+            'optimistic': {
                 'scenario_name': '공격 시나리오',
-                'inflation_rate': 0.030,
-                'pre_retirement_return': 0.055,
-                'post_retirement_return': 0.035,
-                'wage_growth_rate': 0.050,
-                'description': '낙관적이고 적극적인 가정'
+                'inflation_rate': KOR_2025.ECON.optimistic['inflation_rate'],
+                'pre_retirement_return': KOR_2025.ECON.optimistic['pre_ret'],
+                'post_retirement_return': KOR_2025.ECON.optimistic['post_ret'],
+                'wage_growth_rate': KOR_2025.ECON.optimistic['wage'],
+                'real_return': KOR_2025.ECON.optimistic['real_ret'],
+                'probability': KOR_2025.ECON.optimistic['p'],
+                'description': '낙관적이고 적극적인 가정 (한국 시장 특성 반영)'
             }
         }
 
         return {
             'scenarios': scenarios,
-            'recommendation': 'moderate',
-            'note': '본인의 위험 성향과 시장 전망에 따라 시나리오를 선택하세요.'
+            'market_characteristics': {
+                'kospi_volatility': KOR_2025.MKT.kospi_volatility,
+                'bond_volatility': KOR_2025.MKT.bond_volatility,
+                'domestic_equity_ratio': KOR_2025.MKT.domestic_equity_ratio,
+                'foreign_equity_ratio': KOR_2025.MKT.foreign_equity_ratio
+            },
+            'recommendation': 'baseline',
+            'note': '한국 시장 특성을 반영한 시나리오입니다. 본인의 위험 성향과 시장 전망에 따라 선택하세요.'
         }
 
-    # Tool 3: 필요 은퇴자본 계산
+    # Tool 3: 필요 은퇴자본 계산 (한국 특화)
     def calculate_retirement_capital(self, annual_expense: float,
                                      retirement_years: int,
                                      scenario: dict) -> dict:
-        """안전인출률법과 연금현가법으로 필요 은퇴자본 계산"""
+        """한국형 필요 은퇴자본 계산 (기간별 SWR 조정)"""
 
         post_ret_rate = scenario.get('post_retirement_return', 0.025)
 
-        # 방법 1: 안전인출률법 (SWR: 3.0~3.5%)
-        swr_low = annual_expense / 0.035
-        swr_high = annual_expense / 0.030
-        swr_avg = (swr_low + swr_high) / 2
+        # 한국형 SWR 범위 (기간 반영)
+        swr_band = self._swr_band_kor(retirement_years)
+        
+        # 방법 1: 안전인출률법 (기간별 조정)
+        swr_low = annual_expense / swr_band['high']
+        swr_high = annual_expense / swr_band['low']
+        swr_avg = annual_expense / swr_band['mid']
 
         # 방법 2: 연금현가법 (PV of Annuity)
         pv_method = self.calculator.calculate_annuity_pv(
             annual_expense, post_ret_rate, retirement_years
         )
 
-        # 의료비 버킷 (연간 지출의 20%)
-        medical_reserve = annual_expense * 0.20 * retirement_years / 2
+        # 한국형 의료비 버킷 (연령 가중)
+        medical_reserve = self._calculate_medical_reserve_kor(annual_expense, retirement_years)
 
         return {
             'safe_withdrawal_method': {
                 '최소필요자본': round(swr_low, 0),
                 '최대필요자본': round(swr_high, 0),
-                '평균': round(swr_avg, 0)
+                '평균': round(swr_avg, 0),
+                'swr_rates': {
+                    'low': f"{swr_band['low']*100:.2f}%",
+                    'mid': f"{swr_band['mid']*100:.2f}%", 
+                    'high': f"{swr_band['high']*100:.2f}%"
+                }
             },
             'present_value_method': round(pv_method, 0),
             'medical_reserve': round(medical_reserve, 0),
             'recommended_total': round((swr_avg + pv_method) / 2 + medical_reserve, 0),
-            'note': '두 방법의 평균에 의료비 버킷을 추가한 금액을 권장합니다.'
+            'korean_characteristics': {
+                'healthcare_ratio': f"{KOR_2025.BUCK.healthcare_base_ratio*100:.1f}%",
+                'medical_cost_ratio': f"{KOR_2025.KR.medical_cost_ratio*100:.1f}%",
+                'national_pension_available': '국민연금 수급 가능'
+            },
+            'note': f'기간 {retirement_years}년에 맞춘 SWR 조정과 한국 의료비 특성을 반영했습니다.'
         }
+
+    def _swr_band_kor(self, years: int) -> dict:
+        """한국형 SWR 범위 (기간 중심 밴드)"""
+        mid = KOR_2025.SWR.adjust_by_duration(years)
+        return {
+            'low': max(KOR_2025.SWR.min_floor, mid - 0.005),
+            'mid': mid,
+            'high': min(0.04, mid + 0.005)
+        }
+
+    def _calculate_medical_reserve_kor(self, annual_expense: float, retirement_years: int) -> float:
+        """한국형 의료비 준비금 계산"""
+        base_med = annual_expense * KOR_2025.BUCK.healthcare_base_ratio
+        # 평균 연령 가중치 적용 (65-95세)
+        avg_age_factor = 1.6  # 평균 가중치
+        return base_med * min(30, retirement_years) * avg_age_factor
 
     # Tool 4: 은퇴시점 자산 프로젝션
     def project_retirement_assets(self, current_assets: dict,
@@ -335,12 +382,12 @@ class JeoklipService:
             'message': f"은퇴자금이 {abs(round(gap/10000, 0))}만원 {status}합니다."
         }
 
-    # Tool 6: 저축계획 최적화
+    # Tool 6: 저축계획 최적화 (한국 특화)
     def optimize_savings_plan(self, funding_gap: float,
                               years_to_retirement: int,
                               current_monthly_savings: float,
                               scenario: dict) -> dict:
-        """추가 저축 필요액 계산 및 실행 가능성 분석"""
+        """한국형 저축계획 최적화 (시나리오 가중 평가)"""
 
         if funding_gap <= 0:
             return {
@@ -358,19 +405,17 @@ class JeoklipService:
         )
         monthly_pmt = annual_pmt / 12
 
-        # 실행 가능성 점수
-        if current_monthly_savings > 0:
-            feasibility = min(
-                100, (current_monthly_savings / monthly_pmt) * 100)
-        else:
-            feasibility = 0
+        # 한국형 실행 가능성 점수 (시나리오 가중)
+        feasibility = self._feasibility_score_kor(current_monthly_savings, monthly_pmt, scenario)
 
-        # 권장사항
+        # 한국 특화 권장사항
         recommendations = []
         if feasibility < 80:
             recommendations.append("은퇴 나이를 1-2년 늦추는 것을 고려하세요.")
             recommendations.append("목표 생활비를 10% 줄이는 것을 검토하세요.")
             recommendations.append("세제혜택 계좌(IRP, 연금저축)를 우선 활용하세요.")
+            recommendations.append("주택연금 도입을 검토하세요 (한도 3억원).")
+            recommendations.append("국민연금 수급 시점을 늦추는 것을 고려하세요.")
 
         return {
             'monthly_savings_needed': round(monthly_pmt, 0),
@@ -378,6 +423,12 @@ class JeoklipService:
             'current_monthly_savings': current_monthly_savings,
             'additional_needed': round(monthly_pmt - current_monthly_savings, 0),
             'feasibility_score': round(feasibility, 1),
+            'korean_alternatives': {
+                '주택연금_도입시': f"월 {round(monthly_pmt * 0.3, 0):,}원 절약 가능",
+                'IRP_최대활용시': f"연 {KOR_2025.KR.irp_limit:,}원까지 세제혜택",
+                '연금저축_최대활용시': f"연 {KOR_2025.KR.pension_savings_limit:,}원까지 세제혜택",
+                '국민연금_1년_늦춤시': f"월 {round(monthly_pmt * 0.2, 0):,}원 절약 가능"
+            },
             'recommendations': recommendations,
             'alternatives': {
                 '은퇴_1년_연장시': round(monthly_pmt * years_to_retirement / (years_to_retirement + 1), 0),
@@ -385,6 +436,19 @@ class JeoklipService:
                 '목표지출_10%감소시': round(monthly_pmt * 0.9, 0)
             }
         }
+
+    def _feasibility_score_kor(self, current_savings: float, needed_savings: float, scenario: dict) -> float:
+        """한국형 실행 가능성 점수 (시나리오 가중)"""
+        if current_savings > 0:
+            base_feasibility = min(100, (current_savings / needed_savings) * 100)
+        else:
+            base_feasibility = 0
+        
+        # 시나리오별 가중치 적용 (간단 버전)
+        scenario_weight = scenario.get('probability', 0.5)
+        adjusted_feasibility = base_feasibility * (0.5 + scenario_weight * 0.5)
+        
+        return min(100, adjusted_feasibility)
 
 
 # ========== MCP Server 설정 ==========
