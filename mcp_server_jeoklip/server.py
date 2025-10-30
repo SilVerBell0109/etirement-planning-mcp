@@ -2,11 +2,13 @@ from datetime import datetime
 from enum import Enum
 import json
 from typing import Sequence
-import numpy as np  # type: ignore
 import csv
 import os
 import sys
 from pathlib import Path
+
+# __pycache__ 폴더 생성 방지
+sys.dont_write_bytecode = True
 
 # 중앙 설정 모듈 import
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
@@ -17,8 +19,6 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
 from mcp.shared.exceptions import McpError
 
-from pydantic import BaseModel
-
 
 class JeoklipTools(str, Enum):
     COLLECT_USER_INFO = "collect_user_info"
@@ -27,56 +27,6 @@ class JeoklipTools(str, Enum):
     PROJECT_ASSETS = "project_retirement_assets"
     ANALYZE_GAP = "analyze_funding_gap"
     OPTIMIZE_SAVINGS = "optimize_savings_plan"
-
-
-# ========== 데이터 모델 ==========
-
-class UserProfile(BaseModel):
-    current_age: int
-    target_retirement_age: int
-    life_expectancy: int
-    monthly_income: float
-    monthly_expense: float
-
-
-class AssetPortfolio(BaseModel):
-    cash_savings: float
-    funds_etf: float
-    pension_account: float
-    real_estate: float
-
-
-class EconomicScenario(BaseModel):
-    scenario_type: str  # conservative, moderate, aggressive
-    inflation_rate: float
-    pre_retirement_return: float
-    post_retirement_return: float
-    wage_growth_rate: float
-
-
-class RetirementCapital(BaseModel):
-    safe_withdrawal_method: float
-    present_value_method: float
-    recommended_range: dict
-
-
-class AssetProjection(BaseModel):
-    total_projected_assets: float
-    breakdown: dict
-
-
-class FundingGap(BaseModel):
-    required_capital: float
-    projected_assets: float
-    gap_amount: float
-    gap_percentage: float
-
-
-class SavingsPlan(BaseModel):
-    monthly_savings_needed: float
-    annual_savings_needed: float
-    feasibility_score: float
-    recommendations: list
 
 
 # ========== 금융 계산 엔진 ==========
@@ -123,16 +73,6 @@ class JeoklipService:
         # CSV 저장 경로 설정
         self.csv_dir = Path(__file__).parent
         self.csv_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 결과 누적 저장소 (신규 추가)
-        self.results = {
-            'user_profile': None,
-            'scenarios_result': None,
-            'capital_result': None,
-            'projection_result': None,
-            'gap_result': None,
-            'savings_result': None
-        }
 
     # ========== CSV 저장 기능 (신규 추가) ==========
     
@@ -198,11 +138,8 @@ class JeoklipService:
             'assets': asset_portfolio,
             'collected_at': datetime.now().isoformat()
         }
-        
-        # 결과 저장 (신규 추가)
-        self.results['user_profile'] = user_profile
-        
-        # CSV 파일로 저장 (신규 추가)
+
+        # CSV 파일로 저장
         try:
             csv_filepath = self._save_to_csv(user_profile, income_structure, 
                                             expense_categories, asset_portfolio)
@@ -275,10 +212,7 @@ class JeoklipService:
             'recommendation': 'baseline',
             'note': '한국 시장 특성을 반영한 시나리오입니다. 본인의 위험 성향과 시장 전망에 따라 선택하세요.'
         }
-        
-        # 결과 저장 (신규 추가)
-        self.results['scenarios_result'] = result
-        
+
         return result
 
     # Tool 3: 필요 은퇴자본 계산 (한국 특화)
@@ -326,10 +260,7 @@ class JeoklipService:
             },
             'note': f'기간 {retirement_years}년에 맞춘 SWR 조정과 한국 의료비 특성을 반영했습니다.'
         }
-        
-        # 결과 저장 (신규 추가)
-        self.results['capital_result'] = result
-        
+
         return result
 
     def _swr_band_kor(self, years: int) -> dict:
@@ -385,10 +316,7 @@ class JeoklipService:
                 '기간': f"{years_to_retirement}년"
             }
         }
-        
-        # 결과 저장 (신규 추가)
-        self.results['projection_result'] = result
-        
+
         return result
 
     # Tool 5: 자금격차 분석
@@ -409,10 +337,7 @@ class JeoklipService:
             'status': status,
             'message': f"은퇴자금이 {abs(round(gap/10000, 0))}만원 {status}합니다."
         }
-        
-        # 결과 저장 (신규 추가)
-        self.results['gap_result'] = result
-        
+
         return result
 
     # Tool 6: 저축계획 최적화 (한국 특화)
@@ -473,11 +398,11 @@ class JeoklipService:
             base_feasibility = min(100, (current_savings / needed_savings) * 100)
         else:
             base_feasibility = 0
-        
+
         # 시나리오별 가중치 적용 (간단 버전)
         scenario_weight = scenario.get('probability', 0.5)
         adjusted_feasibility = base_feasibility * (0.5 + scenario_weight * 0.5)
-        
+
         return min(100, adjusted_feasibility)
 
 # ========== MCP Server 설정 ==========

@@ -17,6 +17,8 @@ from mcp.shared.exceptions import McpError
 
 from pydantic import BaseModel
 
+# __pycache__ 폴더 생성 방지
+sys.dont_write_bytecode = True
 
 class ToojaTools(str, Enum):
     ASSESS_RISK_PROFILE = "assess_risk_profile"

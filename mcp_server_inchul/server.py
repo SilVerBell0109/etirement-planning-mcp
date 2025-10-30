@@ -17,7 +17,8 @@ from mcp.shared.exceptions import McpError
 
 from pydantic import BaseModel
 
-
+# __pycache__ 폴더 생성 방지
+sys.dont_write_bytecode = True
 class InchulTools(str, Enum):
     ANALYZE_ASSET_STRUCTURE = "analyze_retirement_asset_structure"
     OPTIMIZE_BASELINE = "optimize_withdrawal_baseline"

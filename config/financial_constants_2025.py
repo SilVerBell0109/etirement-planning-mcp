@@ -1,7 +1,12 @@
 # config/financial_constants_2025.py
 # 중앙 설정 모듈 - 대한민국 2025년 기준
+import sys
 from dataclasses import dataclass
 from typing import Dict, Tuple
+
+# __pycache__ 폴더 생성 방지
+sys.dont_write_bytecode = True
+
 
 # ========== 기본 금융 규칙 ==========
 
