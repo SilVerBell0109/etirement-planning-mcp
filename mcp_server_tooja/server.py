@@ -8,7 +8,7 @@ import os
 
 # 중앙 설정 모듈 import
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
-from financial_constants_2025 import KOR_2025
+from financial_constants_2025 import KOR_2025 # type: ignore
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
