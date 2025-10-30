@@ -62,10 +62,9 @@ class TaxKOR2025:
     # 금융소득 분리과세 (이자·배당)
     interest_dividend: float = 0.154  # 15.4%
 
-    # === 연금소득 분리과세 (원천징수) ===
+    # === 연금소득 분리과세 (원천징수) - 2024년 개정 ===
     pension_separated_brackets: Tuple = (
-        (12_000_000, 0.033),      # 1,200만원 이하: 3.3%
-        (14_000_000, 0.044),      # 1,400만원 이하: 4.4%
+        (14_000_000, 0.033),      # 1,400만원 이하: 3.3% (2024년 개정)
         (45_000_000, 0.044),      # 4,500만원 이하: 4.4%
         (100_000_000, 0.055),     # 1억원 이하: 5.5%
         (float("inf"), 0.055)     # 1억원 초과: 5.5%
@@ -83,8 +82,8 @@ class TaxKOR2025:
         (float("inf"), 0.45)      # 10억원 초과: 45%
     )
     
-    # 연금소득 분리과세 한도
-    pension_separated_cap: int = 12_000_000  # 연 1,200만원
+    # 연금소득 분리과세 한도 (2024년 개정)
+    pension_separated_cap: int = 14_000_000  # 연 1,400만원 (2024년 개정)
     
     # 연금계좌 세액공제 한도
     pension_deduction_limit: int = 9_000_000  # 900만원 (2025년 상향)
@@ -92,7 +91,7 @@ class TaxKOR2025:
 @dataclass(frozen=True)
 class PerformanceRulesKOR:
     """한국 성과 평가 기준"""
-    risk_free_rate: float = 0.029  # 국고채 3년물 (2024년 10월 기준)
+    risk_free_rate: float = 0.032  # 국고채 3년물 (2024년 12월 기준)
     sharpe_benchmark: Dict = None
     mdd_limits: Dict = None
 
@@ -142,8 +141,8 @@ class KoreanNationalPension:
     # 소득대체율 (40년 가입 기준)
     income_replacement_rate: float = 0.40  # 40% (2028년까지 단계적 인하)
     
-    # 기준연금액 (2025년 예상)
-    max_monthly_benefit: int = 2_500_000  # 약 250만원
+    # 기준연금액 (2024년 실제)
+    max_monthly_benefit: int = 2_200_000  # 약 220만원 (2024년 실제)
     
     # 조기수령 감액률 (만 60~64세)
     early_claim: Dict = None  # 연 6% 감액 (최대 30%)

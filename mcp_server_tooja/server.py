@@ -85,7 +85,7 @@ class ToojaService:
             description = '공격적 - 성장 추구'
 
         # 한국형 주식 상한 (위험점수 기반)
-        max_equity = self._equity_cap_from_risk_kor(risk_score)
+        max_equity = min(70, (100 - age))  # 나이에 따른 주식 비중 제한
         
         # 생애주기 반영 (130-나이 규칙 변형)
         phase = self._determine_life_phase(age, years_to_retirement)
@@ -116,9 +116,6 @@ class ToojaService:
             'recommendation': f'{years_to_retirement}년의 투자기간과 {phase} 단계를 고려하여 {risk_level} 포트폴리오를 권장합니다.'
         }
 
-    def _equity_cap_from_risk_kor(self, risk_score: int) -> float:
-        """한국형 위험점수 → 주식 상한"""
-        return max(0.30, min(0.80, 0.30 + (risk_score / 100) * 0.50))
 
     def _determine_life_phase(self, age: int, years_to_retirement: int) -> str:
         """생애주기 단계 결정"""
@@ -165,9 +162,9 @@ class ToojaService:
                 'expected_volatility': self._expected_volatility_kor(portfolio_type),
                 'characteristics': self._portfolio_characteristics_kor(portfolio_type),
                 'korean_considerations': {
-                    '국내주식_비중': f"{allocation.get('국내주식', 0)}%",
-                    '해외주식_비중': f"{allocation.get('해외주식', 0)}%",
-                    '리츠_비중': f"{allocation.get('리츠', 0)}%",
+                    '주식_비중': f"{allocation.get('주식', 0)}%",
+                    '채권_비중': f"{allocation.get('채권', 0)}%",
+                    '금_비중': f"{allocation.get('금', 0)}%",
                     '세제혜택_활용': 'IRP/연금저축 우선 배치 권장'
                 }
             }
@@ -178,10 +175,10 @@ class ToojaService:
             'portfolios': portfolios,
             'recommendation': 'moderate',
             'korean_market_guidelines': {
-                '국내주식_기준': f"{KOR_2025.MKT.domestic_equity_ratio * 100:.0f}%",
-                '해외주식_기준': f"{KOR_2025.MKT.foreign_equity_ratio * 100:.0f}%",
-                '리츠_권장': f"{KOR_2025.MKT.reit_ratio * 100:.0f}%",
-                '변동성_특성': f"코스피 {KOR_2025.MKT.kospi_volatility * 100:.0f}%, 국채 {KOR_2025.MKT.bond_volatility * 100:.0f}%"
+                '주식_권장범위': '20-50% (나이와 위험성향에 따라 조정)',
+                '채권_권장범위': '30-55% (안정성 확보)',
+                '금_권장비중': '5-10% (인플레이션 헤지)',
+                '세제혜택_계좌': 'IRP/연금저축 우선 활용'
             },
             'note': '한국 시장 특성과 생애주기를 반영한 포트폴리오입니다. 본인의 위험성향과 투자목표에 따라 선택하세요.',
             'selection_guide': {
@@ -192,45 +189,33 @@ class ToojaService:
         }
 
     def _lifecycle_allocation_kor(self, age: int, risk_level: str, phase: str, risk_score: int) -> dict:
-        """한국형 생애주기 자산 배분"""
-        # 기본 주식 비중
-        if phase == "accumulation":
-            base_eq = min(0.90, (130 - age) / 100)
-        elif phase == "transition":
-            base_eq = min(0.70, (120 - age) / 100)
-        else:
-            base_eq = min(0.60, (110 - age) / 100)
-
-        # 위험성향 조정
-        risk_adj = {"conservative": -0.10, "moderate": 0.0, "aggressive": +0.10}[risk_level]
-        cap = self._equity_cap_from_risk_kor(risk_score)
-        eq = max(0.20, min(cap, base_eq + risk_adj))
-
-        # 한국형 국내/해외 분할
-        dom_ratio = KOR_2025.MKT.domestic_equity_ratio
-        for_ratio = KOR_2025.MKT.foreign_equity_ratio
-        reit_ratio = KOR_2025.MKT.reit_ratio
-
-        # 자산 배분 계산
-        bonds = int(round((1 - eq) * 0.65 * 100))
-        stocks = int(round(eq * 100))
-        domestic_stocks = int(round(stocks * dom_ratio))
-        foreign_stocks = stocks - domestic_stocks
-        reits = int(round(reit_ratio * 100))
-        gold = 5
-        alt = 8 if risk_level != "conservative" else 5
-        cash = max(5, 100 - (bonds + stocks + gold + alt))
-
-        return {
-            "채권": bonds,
-            "주식": stocks,
-            "국내주식": domestic_stocks,
-            "해외주식": foreign_stocks,
-            "리츠": reits,
-            "대체투자": alt,
-            "금": gold,
-            "현금": cash
-        }
+        """간단한 포트폴리오 자산 배분"""
+        max_equity = min(70, (100 - age))  # 나이에 따른 주식 비중 제한
+        
+        if risk_level == 'conservative':
+            return {
+                '채권': 55,
+                '주식': min(20, max_equity),
+                '금': 10,
+                '현금': 10,
+                '대체투자': 5
+            }
+        elif risk_level == 'moderate':
+            return {
+                '채권': 40,
+                '주식': min(35, max_equity),
+                '금': 10,
+                '현금': 10,
+                '대체투자': 5
+            }
+        else:  # aggressive
+            return {
+                '채권': 30,
+                '주식': min(50, max_equity),
+                '금': 10,
+                '현금': 5,
+                '대체투자': 5
+            }
 
     def _expected_return_kor(self, portfolio_type: str) -> float:
         """한국형 기대수익률"""

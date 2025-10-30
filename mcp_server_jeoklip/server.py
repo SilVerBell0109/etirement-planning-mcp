@@ -446,7 +446,6 @@ class JeoklipService:
         if feasibility < 80:
             recommendations.append("은퇴 나이를 1-2년 늦추는 것을 고려하세요.")
             recommendations.append("목표 생활비를 10% 줄이는 것을 검토하세요.")
-            recommendations.append("세제혜택 계좌(IRP, 연금저축)를 우선 활용하세요.")
             recommendations.append("주택연금 도입을 검토하세요 (한도 3억원).")
             recommendations.append("국민연금 수급 시점을 늦추는 것을 고려하세요.")
 
@@ -458,8 +457,6 @@ class JeoklipService:
             'feasibility_score': round(feasibility, 1),
             'korean_alternatives': {
                 '주택연금_도입시': f"월 {round(monthly_pmt * 0.3, 0):,}원 절약 가능",
-                'IRP_최대활용시': f"연 {KOR_2025.KR.irp_limit:,}원까지 세제혜택",
-                '연금저축_최대활용시': f"연 {KOR_2025.KR.pension_savings_limit:,}원까지 세제혜택",
                 '국민연금_1년_늦춤시': f"월 {round(monthly_pmt * 0.2, 0):,}원 절약 가능"
             },
             'recommendations': recommendations,
