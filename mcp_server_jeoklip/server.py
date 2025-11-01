@@ -27,6 +27,8 @@ class JeoklipTools(str, Enum):
     PROJECT_ASSETS = "project_retirement_assets"
     ANALYZE_GAP = "analyze_funding_gap"
     OPTIMIZE_SAVINGS = "optimize_savings_plan"
+    CALCULATE_RECOMMENDED_EXPENSES = "calculate_recommended_expenses"
+    ANALYZE_BRIDGE_PERIOD = "analyze_bridge_period"
 
 
 # ========== 금융 계산 엔진 ==========
@@ -141,13 +143,27 @@ class JeoklipService:
 
         # CSV 파일로 저장
         try:
-            csv_filepath = self._save_to_csv(user_profile, income_structure, 
+            csv_filepath = self._save_to_csv(user_profile, income_structure,
                                             expense_categories, asset_portfolio)
             csv_saved = True
             csv_message = f'CSV 파일로 저장됨: {csv_filepath}'
         except Exception as e:
             csv_saved = False
             csv_message = f'CSV 저장 실패: {str(e)}'
+
+        # 월 저축 가능액 계산
+        monthly_income = income_structure.get('monthly_income', 0)
+        monthly_expense = expense_categories.get('total_monthly_expense', 0)
+        monthly_savings_capacity = monthly_income - monthly_expense
+
+        # 비상금/여유금 계산 (월 지출의 3~6개월분 권장)
+        emergency_fund_min = monthly_expense * 3  # 최소 3개월
+        emergency_fund_max = monthly_expense * 6  # 권장 6개월
+
+        # 현재 보유 비상금 판단 (현금성 자산 기준)
+        current_cash = asset_portfolio.get('현금', 0) + asset_portfolio.get('예금', 0) + asset_portfolio.get('MMF', 0)
+        emergency_fund_status = '충분' if current_cash >= emergency_fund_min else '부족'
+        emergency_fund_gap = max(0, emergency_fund_min - current_cash)
 
         return {
             'status': 'success',
@@ -157,11 +173,38 @@ class JeoklipService:
             'summary': {
                 '현재나이': user_profile.get('current_age'),
                 '목표은퇴나이': user_profile.get('target_retirement_age'),
-                '월소득': income_structure.get('monthly_income'),
-                '월지출': expense_categories.get('total_monthly_expense'),
+                '월소득': monthly_income,
+                '월지출': monthly_expense,
                 '총자산': sum(asset_portfolio.values())
+            },
+            '월저축가능액': {
+                '금액': round(monthly_savings_capacity, 0),
+                '소득대비비율': f"{(monthly_savings_capacity/monthly_income*100):.1f}%" if monthly_income > 0 else "0%",
+                '평가': self._evaluate_savings_rate(monthly_savings_capacity, monthly_income)
+            },
+            '비상금_여유금': {
+                '권장_최소금액': round(emergency_fund_min, 0),
+                '권장_최대금액': round(emergency_fund_max, 0),
+                '현재_보유액': round(current_cash, 0),
+                '상태': emergency_fund_status,
+                '부족액': round(emergency_fund_gap, 0) if emergency_fund_gap > 0 else 0,
+                '권장사항': f"월 지출의 {3}~{6}개월분 비상금을 현금성 자산으로 확보하세요."
             }
         }
+
+    def _evaluate_savings_rate(self, savings: float, income: float) -> str:
+        """저축률 평가"""
+        if income == 0:
+            return "소득 정보 없음"
+        rate = savings / income
+        if rate >= 0.30:
+            return "우수 (30% 이상)"
+        elif rate >= 0.20:
+            return "양호 (20% 이상)"
+        elif rate >= 0.10:
+            return "보통 (10% 이상)"
+        else:
+            return "개선 필요 (10% 미만)"
 
     # Tool 2: 경제 시나리오 생성 (한국 특화)
     def generate_economic_scenarios(self) -> dict:
@@ -405,6 +448,194 @@ class JeoklipService:
 
         return min(100, adjusted_feasibility)
 
+    # Tool 7: 권장 월 지출 계산 (은퇴 전/후)
+    def calculate_recommended_expenses(self, monthly_income: float,
+                                       current_monthly_expense: float,
+                                       current_age: int,
+                                       target_retirement_age: int) -> dict:
+        """권장 월 지출 계산 (은퇴 전/후)"""
+
+        # 은퇴 전 권장 월 지출 (소득 기반, 50/30/20 규칙 참고)
+        # 필수지출(50%) + 선택지출(30%) + 저축(20%)
+        pre_retirement_recommended = {
+            '필수지출_권장': round(monthly_income * 0.50, 0),
+            '선택지출_권장': round(monthly_income * 0.30, 0),
+            '저축_권장': round(monthly_income * 0.20, 0),
+            '총지출_권장': round(monthly_income * 0.80, 0),
+            '현재지출': current_monthly_expense,
+            '차이': round(monthly_income * 0.80 - current_monthly_expense, 0),
+            '평가': self._evaluate_expense_level(current_monthly_expense, monthly_income)
+        }
+
+        # 은퇴 후 권장 월 지출 (은퇴 전 지출의 70-80% 권장)
+        # 교통비, 의류비, 식비 감소를 반영
+        retirement_expense_ratio_low = 0.70  # 보수적 (70%)
+        retirement_expense_ratio_mid = 0.75  # 중도 (75%)
+        retirement_expense_ratio_high = 0.80  # 여유 (80%)
+
+        current_expense_base = current_monthly_expense
+
+        post_retirement_recommended = {
+            '보수형': {
+                '월지출': round(current_expense_base * retirement_expense_ratio_low, 0),
+                '비율': f"{retirement_expense_ratio_low*100:.0f}%",
+                '설명': '최소 생활비 수준 (검소한 은퇴 생활)'
+            },
+            '중도형': {
+                '월지출': round(current_expense_base * retirement_expense_ratio_mid, 0),
+                '비율': f"{retirement_expense_ratio_mid*100:.0f}%",
+                '설명': '적정 생활비 수준 (안정적 은퇴 생활)'
+            },
+            '여유형': {
+                '월지출': round(current_expense_base * retirement_expense_ratio_high, 0),
+                '비율': f"{retirement_expense_ratio_high*100:.0f}%",
+                '설명': '넉넉한 생활비 수준 (여유로운 은퇴 생활)'
+            },
+            '권장': '중도형',
+            '참고사항': [
+                '은퇴 후 감소 항목: 교통비, 의류비, 식비 일부',
+                '은퇴 후 증가 항목: 의료비, 여가비',
+                '주택연금이나 국민연금으로 일부 충당 가능'
+            ]
+        }
+
+        return {
+            '은퇴전_권장지출': pre_retirement_recommended,
+            '은퇴후_권장지출': post_retirement_recommended,
+            '현재상황': {
+                '현재나이': current_age,
+                '목표은퇴나이': target_retirement_age,
+                '은퇴까지': f"{target_retirement_age - current_age}년"
+            }
+        }
+
+    def _evaluate_expense_level(self, expense: float, income: float) -> str:
+        """지출 수준 평가"""
+        if income == 0:
+            return "소득 정보 없음"
+        ratio = expense / income
+        if ratio <= 0.70:
+            return "우수 (70% 이하, 저축률 높음)"
+        elif ratio <= 0.80:
+            return "양호 (80% 이하, 적정 수준)"
+        elif ratio <= 0.90:
+            return "보통 (90% 이하)"
+        else:
+            return "개선 필요 (90% 초과, 지출 과다)"
+
+    # Tool 8: 브릿지 구간 분석 (공적연금 전 부족분 충당 계획)
+    def analyze_bridge_period(self, retirement_age: int,
+                               national_pension_start_age: int,
+                               monthly_expense_post_retirement: float,
+                               expected_national_pension: float,
+                               scenario: dict) -> dict:
+        """브릿지 구간 분석 (은퇴 ~ 공적연금 수령 전까지)"""
+
+        # 브릿지 구간 기간 계산
+        bridge_years = national_pension_start_age - retirement_age
+
+        if bridge_years <= 0:
+            return {
+                'status': 'no_bridge_period',
+                'message': '브릿지 구간이 없습니다. 은퇴와 동시에 국민연금 수령이 가능합니다.',
+                'bridge_years': 0
+            }
+
+        # 브릿지 구간 월별 부족분 계산
+        monthly_shortfall = monthly_expense_post_retirement  # 전액 자기 자본으로 충당
+
+        # 브릿지 구간 총 필요 자본
+        total_bridge_capital_needed = monthly_shortfall * 12 * bridge_years
+
+        # 인플레이션 반영 (중간값 적용)
+        inflation_rate = scenario.get('inflation_rate', 0.02)
+        avg_year = bridge_years / 2
+        inflation_adjusted_capital = total_bridge_capital_needed * ((1 + inflation_rate) ** avg_year)
+
+        # 3버킷 전략 적용 (현금 2년 + 소득형 8년)
+        cash_bucket_years = min(2, bridge_years)
+        income_bucket_years = max(0, min(8, bridge_years - cash_bucket_years))
+        growth_bucket_years = max(0, bridge_years - cash_bucket_years - income_bucket_years)
+
+        cash_bucket_amount = monthly_shortfall * 12 * cash_bucket_years
+        income_bucket_amount = monthly_shortfall * 12 * income_bucket_years
+        growth_bucket_amount = monthly_shortfall * 12 * growth_bucket_years
+
+        # 충당 방안
+        funding_strategies = [
+            {
+                '전략': '3버킷 전략 (현금 + 소득형 + 성장형)',
+                '현금버킷': f"{cash_bucket_years}년치 ({round(cash_bucket_amount, 0):,}원)",
+                '소득버킷': f"{income_bucket_years}년치 ({round(income_bucket_amount, 0):,}원)",
+                '성장버킷': f"{growth_bucket_years}년치 ({round(growth_bucket_amount, 0):,}원)" if growth_bucket_years > 0 else "불필요",
+                '설명': '안정성과 수익성을 균형있게 확보'
+            },
+            {
+                '전략': '연금저축 인출',
+                '금액': f"월 {round(monthly_shortfall, 0):,}원 x {bridge_years}년",
+                '세금': f"연금소득세 {KOR_2025.TAX.pension_separated_brackets[0][1]*100:.1f}% 적용",
+                '설명': '세제혜택을 받은 연금계좌에서 인출'
+            },
+            {
+                '전략': '주택연금 조기 가입',
+                '조건': f"만 {KOR_2025.HOUSING.min_age}세 이상, 주택가격 {KOR_2025.HOUSING.property_value_limit/100000000:.0f}억 이하",
+                '예상수령': '주택가격에 따라 월 80만~210만원',
+                '설명': '주택을 담보로 평생 연금 수령 (브릿지 구간 해결)'
+            }
+        ]
+
+        # 국민연금 수령 시작 후 (브릿지 이후)
+        post_bridge_monthly_shortfall = monthly_expense_post_retirement - expected_national_pension
+        post_bridge_status = '충분' if post_bridge_monthly_shortfall <= 0 else '부족'
+
+        return {
+            '브릿지구간_기본정보': {
+                '시작나이': retirement_age,
+                '종료나이': national_pension_start_age,
+                '기간': f"{bridge_years}년",
+                '설명': f"{retirement_age}세 은퇴 ~ {national_pension_start_age}세 국민연금 수령 전까지"
+            },
+            '브릿지구간_자금소요': {
+                '월소요액': round(monthly_shortfall, 0),
+                '연소요액': round(monthly_shortfall * 12, 0),
+                '총소요액': round(total_bridge_capital_needed, 0),
+                '인플레이션반영': round(inflation_adjusted_capital, 0),
+                '인플레이션율': f"{inflation_rate*100:.1f}%"
+            },
+            '3버킷_전략_배분': {
+                '현금버킷': {
+                    '기간': f"{cash_bucket_years}년",
+                    '금액': round(cash_bucket_amount, 0),
+                    '설명': '즉시 인출 가능 (예금, MMF)'
+                },
+                '소득버킷': {
+                    '기간': f"{income_bucket_years}년",
+                    '금액': round(income_bucket_amount, 0),
+                    '설명': '안정적 수익 (채권, 배당주)'
+                },
+                '성장버킷': {
+                    '기간': f"{growth_bucket_years}년" if growth_bucket_years > 0 else "불필요",
+                    '금액': round(growth_bucket_amount, 0) if growth_bucket_years > 0 else 0,
+                    '설명': '장기 성장 (주식형 펀드)' if growth_bucket_years > 0 else "브릿지 기간이 짧아 불필요"
+                }
+            },
+            '충당방안': funding_strategies,
+            '브릿지이후_상황': {
+                '국민연금_수령액': round(expected_national_pension, 0),
+                '월지출': round(monthly_expense_post_retirement, 0),
+                '월부족분': round(post_bridge_monthly_shortfall, 0) if post_bridge_monthly_shortfall > 0 else 0,
+                '상태': post_bridge_status,
+                '설명': f"국민연금 수령 후에도 월 {round(abs(post_bridge_monthly_shortfall), 0):,}원 {'추가 필요' if post_bridge_monthly_shortfall > 0 else '여유'}"
+            },
+            '권장사항': [
+                f"브릿지 구간 {bridge_years}년 동안 총 {round(inflation_adjusted_capital/100000000, 1):.1f}억원 필요",
+                "3버킷 전략으로 현금 유동성과 수익성을 동시에 확보하세요",
+                "연금저축, IRP 등 세제혜택 계좌를 우선 활용하세요",
+                "주택연금 가입 조건에 해당하면 적극 검토하세요",
+                f"국민연금 수령 시기를 조정({national_pension_start_age-1}세 조기 or {national_pension_start_age+1}세 연기)하여 브릿지 구간을 조절할 수 있습니다"
+            ]
+        }
+
 # ========== MCP Server 설정 ==========
 
 async def serve() -> None:
@@ -540,6 +771,62 @@ async def serve() -> None:
                     },
                     "required": ["funding_gap", "years_to_retirement", "scenario"]
                 }
+            ),
+            Tool(
+                name=JeoklipTools.CALCULATE_RECOMMENDED_EXPENSES.value,
+                description="권장 월 지출을 계산합니다 (은퇴 전/후)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "monthly_income": {
+                            "type": "number",
+                            "description": "월 소득"
+                        },
+                        "current_monthly_expense": {
+                            "type": "number",
+                            "description": "현재 월 지출"
+                        },
+                        "current_age": {
+                            "type": "integer",
+                            "description": "현재 나이"
+                        },
+                        "target_retirement_age": {
+                            "type": "integer",
+                            "description": "목표 은퇴 나이"
+                        }
+                    },
+                    "required": ["monthly_income", "current_monthly_expense", "current_age", "target_retirement_age"]
+                }
+            ),
+            Tool(
+                name=JeoklipTools.ANALYZE_BRIDGE_PERIOD.value,
+                description="브릿지 구간(은퇴 ~ 공적연금 수령 전)을 분석하고 충당 계획을 제시합니다",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "retirement_age": {
+                            "type": "integer",
+                            "description": "은퇴 나이"
+                        },
+                        "national_pension_start_age": {
+                            "type": "integer",
+                            "description": "국민연금 수령 시작 나이 (보통 65세)"
+                        },
+                        "monthly_expense_post_retirement": {
+                            "type": "number",
+                            "description": "은퇴 후 월 지출액"
+                        },
+                        "expected_national_pension": {
+                            "type": "number",
+                            "description": "예상 국민연금 수령액 (월)"
+                        },
+                        "scenario": {
+                            "type": "object",
+                            "description": "경제 시나리오"
+                        }
+                    },
+                    "required": ["retirement_age", "national_pension_start_age", "monthly_expense_post_retirement", "expected_national_pension", "scenario"]
+                }
             )
         ]
 
@@ -589,6 +876,23 @@ async def serve() -> None:
                         arguments['funding_gap'],
                         arguments['years_to_retirement'],
                         arguments.get('current_monthly_savings', 0),
+                        arguments['scenario']
+                    )
+
+                case JeoklipTools.CALCULATE_RECOMMENDED_EXPENSES.value:
+                    result = service.calculate_recommended_expenses(
+                        arguments['monthly_income'],
+                        arguments['current_monthly_expense'],
+                        arguments['current_age'],
+                        arguments['target_retirement_age']
+                    )
+
+                case JeoklipTools.ANALYZE_BRIDGE_PERIOD.value:
+                    result = service.analyze_bridge_period(
+                        arguments['retirement_age'],
+                        arguments['national_pension_start_age'],
+                        arguments['monthly_expense_post_retirement'],
+                        arguments['expected_national_pension'],
                         arguments['scenario']
                     )
 
