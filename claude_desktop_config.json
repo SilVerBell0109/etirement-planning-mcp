@@ -1,38 +1,34 @@
 {
   "mcpServers": {
-    "filesystem": {
-      "command": "npx",
+    "jeoklip": {
+      "command": "docker",
       "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/Users/silverbell/Desktop",
-        "/Users/silverbell/Documents",
-        "/Users/silverbell/Downloads"
+        "run",
+        "--rm",
+        "-i",
+        "-e", "MCP_SERVER=jeoklip",
+        "retirement-mcp"
       ]
     },
-    "jeoklip": {
-      "command": "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
-      "args": ["-u", "-m", "mcp_server_jeoklip"],
-      "cwd": "/Users/silverbell/Desktop/etirement-planner/etirement-planning-mcp",
-      "env": {
-        "PYTHONPATH": "/Users/silverbell/Desktop/etirement-planner/etirement-planning-mcp"
-      }
+    "tooja": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e", "MCP_SERVER=tooja",
+        "retirement-mcp"
+      ]
     },
     "inchul": {
-      "command": "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
-      "args": ["-u", "-m", "mcp_server_inchul"],
-      "cwd": "/Users/silverbell/Desktop/etirement-planner/etirement-planning-mcp",
-      "env": {
-        "PYTHONPATH": "/Users/silverbell/Desktop/etirement-planner/etirement-planning-mcp"
-      }
-    },
-    "tooja": {
-      "command": "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
-      "args": ["-u", "-m", "mcp_server_tooja"],
-      "cwd": "/Users/silverbell/Desktop/etirement-planner/etirement-planning-mcp",
-      "env": {
-        "PYTHONPATH": "/Users/silverbell/Desktop/etirement-planner/etirement-planning-mcp"
-      }
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e", "MCP_SERVER=inchul",
+        "retirement-mcp"
+      ]
     }
   }
 }

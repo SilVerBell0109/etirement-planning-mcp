@@ -1,0 +1,21 @@
+# Shell scripts should always use LF line endings (Unix style)
+# This ensures they work correctly on Mac/Linux even if created on Windows
+*.sh text eol=lf
+entrypoint.sh text eol=lf
+
+# Docker files
+Dockerfile text
+.dockerignore text
+
+# Python files
+*.py text
+*.pyw text
+
+# Configuration files
+*.json text
+*.md text
+*.txt text
+
+# Ensure shell scripts are executable
+*.sh text eol=lf
+
