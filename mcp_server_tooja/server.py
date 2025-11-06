@@ -25,6 +25,7 @@ class ToojaTools(str, Enum):
     GENERATE_PORTFOLIOS = "generate_three_tier_portfolios"
     ADJUST_VOLATILITY = "adjust_portfolio_volatility"
     BUILD_IMPLEMENTATION = "build_implementation_roadmap"
+    CALCULATE_ACCOUNT_ALLOCATION = "calculate_monthly_account_allocation"
     MONITOR_PERFORMANCE = "monitor_portfolio_performance"
 
 
@@ -57,39 +58,50 @@ class ImplementationPlan(BaseModel):
     rebalancing_rules: dict
 
 
-# ========== 투자메이트 서비스 로직 ==========
+class AccountAllocation(BaseModel):
+    monthly_investment: float
+    irp_monthly: float
+    isa_monthly: float
+    general_monthly: float
+    isa_accumulated: float
+    isa_limit_reached: bool
+
+
+# ========== 투자메이트 서비스 로직 (토큰 절약형) ==========
 
 class ToojaService:
+
+    # 계좌 한도 상수
+    IRP_ANNUAL_LIMIT = 18_000_000  # 연 1,800만원
+    IRP_MONTHLY_OPTIMAL = 1_500_000  # 월 150만원
+    ISA_ANNUAL_LIMIT = 20_000_000  # 연 2,000만원
+    ISA_MONTHLY_OPTIMAL = 1_666_667  # 월 약 166.67만원
+    ISA_TOTAL_LIMIT = 100_000_000  # 총 1억원
 
     def __init__(self):
         self.user_risk_profile = {}
         self.base_portfolios = {}
+        self.isa_accumulated = 0  # ISA 누적 입금액 추적
 
     def assess_risk_profile(self, demographic_info: dict, financial_capacity: dict,
                             liquidity_requirements: dict, behavioral_preferences: dict) -> dict:
-        """한국형 투자성향 및 제약조건 분석"""
+        """투자성향 분석 (간소화)"""
 
         age = demographic_info.get('age', 40)
         retirement_age = demographic_info.get('retirement_age', 65)
         years_to_retirement = retirement_age - age
-
         risk_score = behavioral_preferences.get('risk_tolerance_score', 50)
 
-        # 한국형 위험성향 분류
+        # 위험성향 분류
         if risk_score < 40:
             risk_level = 'conservative'
-            description = '보수적 - 안정성 우선'
         elif risk_score < 70:
             risk_level = 'moderate'
-            description = '중립적 - 균형 추구'
         else:
             risk_level = 'aggressive'
-            description = '공격적 - 성장 추구'
 
-        # 한국형 주식 상한 (위험점수 기반)
-        max_equity = min(70, (100 - age))  # 나이에 따른 주식 비중 제한
-        
-        # 생애주기 반영 (130-나이 규칙 변형)
+        # 주식 상한
+        max_equity = min(70, (100 - age))
         phase = self._determine_life_phase(age, years_to_retirement)
         age_based_equity = self._lifecycle_equity_allocation(age, phase, max_equity)
 
@@ -104,23 +116,14 @@ class ToojaService:
 
         return {
             'risk_level': risk_level,
-            'description': description,
             'max_equity_ratio': round(age_based_equity * 100, 1),
             'life_phase': phase,
-            'korean_investment_constraints': {
-                '주식_최대비중': f"{round(age_based_equity * 100, 1)}%",
-                '채권_최소비중': f"{round((1 - age_based_equity) * 100, 1)}%",
-                '국내주식_비중': f"{KOR_2025.MKT.domestic_equity_ratio * 100:.0f}%",
-                '해외주식_비중': f"{KOR_2025.MKT.foreign_equity_ratio * 100:.0f}%",
-                '세제혜택계좌_활용': 'IRP, 연금저축 우선' if self.user_risk_profile['use_irp'] else '일반계좌',
-                '리츠_권장비중': f"{KOR_2025.MKT.reit_ratio * 100:.0f}%"
-            },
-            'recommendation': f'{years_to_retirement}년의 투자기간과 {phase} 단계를 고려하여 {risk_level} 포트폴리오를 권장합니다.'
+            'recommendation': f'{risk_level} 포트폴리오 권장'
         }
 
 
     def _determine_life_phase(self, age: int, years_to_retirement: int) -> str:
-        """생애주기 단계 결정"""
+        """생애주기 단계"""
         if years_to_retirement > 15:
             return "accumulation"
         elif years_to_retirement > 5:
@@ -129,7 +132,7 @@ class ToojaService:
             return "retirement"
 
     def _lifecycle_equity_allocation(self, age: int, phase: str, max_equity: float) -> float:
-        """생애주기 반영 주식 배분"""
+        """생애주기별 주식 배분"""
         if phase == "accumulation":
             base_eq = min(0.90, (130 - age) / 100)
         elif phase == "transition":
@@ -140,115 +143,120 @@ class ToojaService:
         return max(0.20, min(max_equity, base_eq))
 
     def generate_three_tier_portfolios(self, risk_constraints: dict) -> dict:
-        """한국형 3가지 포트폴리오 생성 (국내/해외 분할 반영)"""
-
-        max_equity = risk_constraints.get('max_equity_ratio', 0.50)
-        risk_level = risk_constraints.get('risk_level', 'moderate')
-        life_phase = risk_constraints.get('life_phase', 'accumulation')
+        """포트폴리오 3가지 생성 (간소화)"""
 
         portfolios = {}
         
         for portfolio_type in ['conservative', 'moderate', 'aggressive']:
-            # 한국형 자산 배분 계산
             allocation = self._lifecycle_allocation_kor(
                 risk_constraints.get('age', 40), 
                 portfolio_type, 
-                life_phase, 
+                risk_constraints.get('life_phase', 'accumulation'), 
                 risk_constraints.get('risk_score', 50)
             )
             
             portfolios[portfolio_type] = {
-                'portfolio_name': f'{portfolio_type.title()}형 포트폴리오',
+                'portfolio_name': f'{portfolio_type.title()}형',
                 'asset_allocation': allocation,
                 'expected_annual_return': self._expected_return_kor(portfolio_type),
-                'expected_volatility': self._expected_volatility_kor(portfolio_type),
-                'characteristics': self._portfolio_characteristics_kor(portfolio_type),
-                'korean_considerations': {
-                    '주식_비중': f"{allocation.get('주식', 0)}%",
-                    '채권_비중': f"{allocation.get('채권', 0)}%",
-                    '금_비중': f"{allocation.get('금', 0)}%",
-                    '세제혜택_활용': 'IRP/연금저축 우선 배치 권장'
-                }
+                'expected_volatility': self._expected_volatility_kor(portfolio_type)
             }
 
         self.base_portfolios = portfolios
 
         return {
             'portfolios': portfolios,
-            'recommendation': 'moderate',
-            'korean_market_guidelines': {
-                '주식_권장범위': '20-50% (나이와 위험성향에 따라 조정)',
-                '채권_권장범위': '30-55% (안정성 확보)',
-                '금_권장비중': '5-10% (인플레이션 헤지)',
-                '세제혜택_계좌': 'IRP/연금저축 우선 활용'
-            },
-            'note': '한국 시장 특성과 생애주기를 반영한 포트폴리오입니다. 본인의 위험성향과 투자목표에 따라 선택하세요.',
-            'selection_guide': {
-                'conservative': '안정성이 최우선, 변동성을 최소화하고 싶은 경우',
-                'moderate': '적절한 수익과 안정성의 균형을 원하는 경우',
-                'aggressive': '장기 성장을 추구하며 단기 변동성을 감내할 수 있는 경우'
-            }
+            'recommendation': 'moderate'
         }
 
     def _lifecycle_allocation_kor(self, age: int, risk_level: str, phase: str, risk_score: int) -> dict:
-        """간단한 포트폴리오 자산 배분"""
-        max_equity = min(70, (100 - age))  # 나이에 따른 주식 비중 제한
+        """자산 배분"""
+        max_equity = min(70, (100 - age))
         
         if risk_level == 'conservative':
-            return {
-                '채권': 55,
-                '주식': min(20, max_equity),
-                '금': 10,
-                '현금': 10,
-                '대체투자': 5
-            }
+            return {'채권': 55, '주식': min(20, max_equity), '금': 10, '현금': 10, '대체투자': 5}
         elif risk_level == 'moderate':
-            return {
-                '채권': 40,
-                '주식': min(35, max_equity),
-                '금': 10,
-                '현금': 10,
-                '대체투자': 5
-            }
+            return {'채권': 40, '주식': min(35, max_equity), '금': 10, '현금': 10, '대체투자': 5}
         else:  # aggressive
-            return {
-                '채권': 30,
-                '주식': min(50, max_equity),
-                '금': 10,
-                '현금': 5,
-                '대체투자': 5
-            }
+            return {'채권': 30, '주식': min(50, max_equity), '금': 10, '현금': 5, '대체투자': 5}
 
     def _expected_return_kor(self, portfolio_type: str) -> float:
-        """한국형 기대수익률"""
-        returns = {
-            'conservative': 4.5,
-            'moderate': 6.0,
-            'aggressive': 7.5
-        }
+        """기대수익률"""
+        returns = {'conservative': 4.5, 'moderate': 6.0, 'aggressive': 7.5}
         return returns[portfolio_type]
 
     def _expected_volatility_kor(self, portfolio_type: str) -> float:
-        """한국형 기대변동성 (한국 시장 특성 반영)"""
-        volatilities = {
-            'conservative': 8.0,
-            'moderate': 12.0,
-            'aggressive': 16.0
-        }
+        """기대변동성"""
+        volatilities = {'conservative': 8.0, 'moderate': 12.0, 'aggressive': 16.0}
         return volatilities[portfolio_type]
 
-    def _portfolio_characteristics_kor(self, portfolio_type: str) -> str:
-        """한국형 포트폴리오 특성"""
-        characteristics = {
-            'conservative': '안정적 수익, 낮은 변동성, 원금보존 중시 (한국 시장 특성 반영)',
-            'moderate': '균형잡힌 수익과 위험, 중도적 접근 (국내/해외 분산)',
-            'aggressive': '높은 성장 잠재력, 변동성 감수 (글로벌 분산)'
+    def calculate_monthly_account_allocation(self, monthly_investment: float,
+                                             isa_accumulated: float = 0) -> dict:
+        """월 투자금액 기반 계좌별 배분 계산"""
+
+        self.isa_accumulated = isa_accumulated
+        isa_limit_reached = self.isa_accumulated >= self.ISA_TOTAL_LIMIT
+
+        # 1순위: IRP 계좌 (월 150만원)
+        irp_monthly = min(monthly_investment, self.IRP_MONTHLY_OPTIMAL)
+        remaining = monthly_investment - irp_monthly
+
+        # 2순위: ISA 계좌 (월 166만원, 단 총 1억 한도)
+        if not isa_limit_reached and remaining > 0:
+            isa_available_space = max(0, self.ISA_TOTAL_LIMIT - self.isa_accumulated)
+            isa_monthly = min(remaining, self.ISA_MONTHLY_OPTIMAL, isa_available_space)
+        else:
+            isa_monthly = 0
+
+        # 3순위: 일반계좌 (나머지)
+        general_monthly = remaining - isa_monthly
+
+        return {
+            'monthly_investment': monthly_investment,
+            'account_allocation': {
+                'IRP': {
+                    'monthly_amount': irp_monthly,
+                    'annual_limit': self.IRP_ANNUAL_LIMIT,
+                    'reason': '세액공제(13.2~16.5%) + 과세이연 혜택 극대화'
+                },
+                'ISA': {
+                    'monthly_amount': isa_monthly,
+                    'annual_limit': self.ISA_ANNUAL_LIMIT,
+                    'total_limit': self.ISA_TOTAL_LIMIT,
+                    'accumulated': self.isa_accumulated,
+                    'limit_reached': isa_limit_reached,
+                    'reason': '손익통산 + 비과세(200/400만원) + 9.9% 저율과세'
+                },
+                'general': {
+                    'monthly_amount': general_monthly,
+                    'reason': '1, 2순위 한도 초과분 또는 ISA 1억 달성 후 투자'
+                }
+            },
+            'summary': {
+                'irp_monthly': irp_monthly,
+                'isa_monthly': isa_monthly,
+                'general_monthly': general_monthly,
+                'total': monthly_investment
+            },
+            'warnings': self._generate_account_warnings(monthly_investment, irp_monthly, isa_monthly, isa_limit_reached)
         }
-        return characteristics[portfolio_type]
+
+    def _generate_account_warnings(self, monthly_investment: float, irp_monthly: float,
+                                   isa_monthly: float, isa_limit_reached: bool) -> list:
+        """계좌 배분 경고 메시지 생성"""
+        warnings = []
+
+        if monthly_investment < self.IRP_MONTHLY_OPTIMAL:
+            warnings.append('월 투자금액이 IRP 최적 금액(150만원)보다 적습니다. IRP 한도를 최대한 활용하면 절세 효과가 더 큽니다.')
+
+        if isa_limit_reached:
+            warnings.append('ISA 계좌가 총 한도(1억원)에 도달했습니다. ISA 입금이 중단되고 일반계좌로 전환됩니다.')
+
+        return warnings
 
     def adjust_portfolio_volatility(self, base_portfolio: dict,
                                     market_volatility_data: dict) -> dict:
-        """한국형 변동성 조정 (코스피 기준)"""
+        """변동성 조정 (간소화)"""
 
         current_volatility = market_volatility_data.get(
             'current_volatility', KOR_2025.MKT.kospi_volatility * 100)
@@ -259,130 +267,245 @@ class ToojaService:
 
         if volatility_ratio > 1.2:
             regime = 'high_volatility'
-            adjustment = '주식 비중 축소, 채권/금 확대 (한국 시장 고변동성 대응)'
-
             allocation['주식'] = max(10, allocation.get('주식', 0) - 10)
-            allocation['국내주식'] = max(5, allocation.get('국내주식', 0) - 5)
-            allocation['해외주식'] = max(5, allocation.get('해외주식', 0) - 5)
             allocation['채권'] = min(60, allocation.get('채권', 0) + 5)
             allocation['금'] = min(20, allocation.get('금', 0) + 5)
-
         elif volatility_ratio < 0.8:
             regime = 'low_volatility'
-            adjustment = '주식 비중 확대, 성장 기회 포착 (한국 시장 저변동성 활용)'
-
             allocation['주식'] = min(80, allocation.get('주식', 0) + 5)
-            allocation['국내주식'] = min(50, allocation.get('국내주식', 0) + 3)
-            allocation['해외주식'] = min(30, allocation.get('해외주식', 0) + 2)
             allocation['채권'] = max(20, allocation.get('채권', 0) - 3)
-            allocation['현금'] = max(5, allocation.get('현금', 0) - 2)
-
         else:
             regime = 'normal_volatility'
-            adjustment = '기본 배분 유지 (한국 시장 정상 변동성)'
 
         return {
             'volatility_regime': regime,
-            'current_volatility': round(current_volatility, 2),
-            'historical_average': round(historical_avg, 2),
             'volatility_ratio': round(volatility_ratio, 2),
-            'korean_benchmark': {
-                'kospi_volatility': KOR_2025.MKT.kospi_volatility * 100,
-                'bond_volatility': KOR_2025.MKT.bond_volatility * 100
-            },
-            'original_allocation': base_portfolio.get('asset_allocation', {}),
-            'adjusted_allocation': allocation,
-            'adjustment_description': adjustment,
-            'note': '한국 시장(코스피) 변동성에 따라 자동으로 포트폴리오를 조정하여 위험을 관리합니다.'
+            'adjusted_allocation': allocation
         }
 
     def build_implementation_roadmap(self, optimized_portfolio: dict,
                                      current_holdings: dict,
                                      account_info: dict) -> dict:
-        """계좌별 실행 계획 및 리밸런싱 전략 수립"""
+        """실행 계획 - 절세 최적화 버전"""
 
-        target_allocation = optimized_portfolio.get('adjusted_allocation',
-                                                    optimized_portfolio.get('asset_allocation', {}))
+        asset_allocation = optimized_portfolio.get('asset_allocation', {})
+        monthly_investment = account_info.get('monthly_investment', 0)
 
-        account_strategy = {}
+        # 계좌별 배분 계산
+        account_allocation = None
+        if monthly_investment > 0:
+            isa_accumulated = account_info.get('isa_accumulated', 0)
+            account_allocation = self.calculate_monthly_account_allocation(
+                monthly_investment, isa_accumulated
+            )
 
-        if account_info.get('has_irp', False):
-            account_strategy['IRP'] = {
-                '우선배치자산': ['주식ETF', '채권'],
-                '이유': '세액공제 및 이연과세 효과 극대화',
-                '권장비중': '주식 50%, 채권 50%'
-            }
+        # 자산별 계좌 배치 전략
+        asset_placement_strategy = self._generate_asset_placement_strategy(asset_allocation)
 
-        if account_info.get('has_pension_savings', False):
-            account_strategy['연금저축'] = {
-                '우선배치자산': ['글로벌주식ETF', '배당주ETF'],
-                '이유': '장기 성장자산 위주 편입',
-                '권장비중': '주식 70%, 채권 30%'
-            }
+        # 실행 단계
+        execution_steps = self._generate_execution_steps(
+            asset_allocation,
+            account_info,
+            monthly_investment
+        )
 
-        account_strategy['일반과세계좌'] = {
-            '우선배치자산': ['금ETF', '리츠', '배당주'],
-            '이유': '배당소득세 고려한 분산',
-            '권장비중': '금 40%, 리츠 30%, 배당주 30%'
-        }
-
-        execution_steps = [
-            {
-                'step': 1,
-                'action': '현금성 자산 확보',
-                'detail': f"목표 현금비중 {target_allocation.get('현금', 10)}%를 CMA/MMF로 확보"
-            },
-            {
-                'step': 2,
-                'action': '세제혜택 계좌 우선 투자',
-                'detail': 'IRP, 연금저축 한도 내 핵심 자산(주식/채권) 매수'
-            },
-            {
-                'step': 3,
-                'action': '일반 계좌 보완 투자',
-                'detail': '금, 리츠 등 세제혜택 계좌에서 부족한 자산군 편입'
-            },
-            {
-                'step': 4,
-                'action': '초기 포트폴리오 완성',
-                'detail': '목표 배분 달성 및 투자일지 작성'
-            }
-        ]
-
-        # 한국형 리밸런싱 규칙
-        rebalancing_rules = self._korean_rebalancing_rules()
+        # 주의사항 및 경고
+        warnings = self._generate_implementation_warnings()
 
         return {
-            'account_strategy': account_strategy,
+            'account_allocation': account_allocation,
+            'asset_placement_strategy': asset_placement_strategy,
             'execution_steps': execution_steps,
-            'rebalancing_rules': rebalancing_rules,
-            'estimated_setup_time': '2-4주',
-            'key_recommendations': [
-                '세제혜택 계좌를 최대한 활용하세요',
-                '일시 투자보다 3-6개월에 걸쳐 분할 매수를 고려하세요',
-                '연 1회 리밸런싱으로 목표 배분을 유지하세요'
-            ]
+            'warnings': warnings,
+            'rebalancing_rules': {
+                'frequency': '연 1회',
+                'timing': '매년 12월 또는 시장 급변동 시',
+                'threshold': '목표 비중 대비 ±5% 이상 이탈 시'
+            }
         }
+
+    def _generate_asset_placement_strategy(self, asset_allocation: dict) -> dict:
+        """자산별 계좌 배치 전략 생성"""
+
+        strategy = {
+            '주식': {
+                'priority_order': ['IRP/연금저축', 'ISA', '일반계좌'],
+                'account_details': {
+                    '1순위_IRP연금저축': {
+                        'products': ['해외주식 ETF (S&P 500, NASDAQ 100 등)'],
+                        'reason': '양도소득세 22% + 배당소득세 15.4%가 모두 이연. 나중에 3.3~5.5% 연금소득세로 대체',
+                        'tax_saving': '약 18~30% 절세'
+                    },
+                    '2순위_ISA': {
+                        'products': ['고배당주 ETF', '해외주식 ETF'],
+                        'reason': '배당소득 9.9% 저율과세 + 손익통산 가능',
+                        'tax_saving': '배당소득세 15.4% → 9.9%'
+                    },
+                    '3순위_일반계좌': {
+                        'products': ['국내 상장주식 (삼성전자, KOSPI 200 ETF 등)'],
+                        'reason': '매매차익이 원래 비과세(0%)이므로 일반계좌 사용',
+                        'warning': '⚠️ 절대 주의: 국내 상장주식을 IRP/연금계좌에 넣지 마세요! 비과세 혜택이 사라집니다.'
+                    }
+                }
+            },
+            '채권': {
+                'priority_order': ['IRP/연금저축', 'ISA', '일반계좌'],
+                'account_details': {
+                    '1순위_IRP연금저축': {
+                        'products': ['채권형 ETF', '채권형 펀드 (국내/해외)'],
+                        'reason': '이자소득세 15.4%가 이연되어 재투자. 복리 효과 극대화',
+                        'tax_saving': '약 15.4% → 3.3~5.5%'
+                    },
+                    '2순위_ISA': {
+                        'products': ['채권형 ETF', '개별 채권'],
+                        'reason': '이자소득 9.9% 저율과세 + 손익통산',
+                        'tax_saving': '15.4% → 9.9%'
+                    },
+                    '3순위_일반계좌': {
+                        'products': ['비과세 채권 (물가연동국채)', '개별 채권'],
+                        'reason': '1, 2순위 한도 초과 시 사용',
+                        'warning': '⚠️ 이자소득 연 2,000만원 초과 시 금융소득종합과세 대상'
+                    }
+                }
+            },
+            '금': {
+                'priority_order': ['IRP/연금저축', 'ISA', '일반계좌 (KRX 금현물)'],
+                'account_details': {
+                    '1순위_IRP연금저축': {
+                        'products': ['금(Gold) ETF'],
+                        'reason': '국내 상장 금 ETF 수익은 배당소득(15.4%). 이를 이연시켜 복리 투자',
+                        'tax_saving': '15.4% → 3.3~5.5%'
+                    },
+                    '2순위_ISA': {
+                        'products': ['금(Gold) ETF'],
+                        'reason': '배당소득 9.9% 저율과세 + 손익통산',
+                        'tax_saving': '15.4% → 9.9%'
+                    },
+                    '3순위_일반계좌': {
+                        'products': ['KRX 금 현물 (한국거래소 금시장)'],
+                        'reason': 'KRX 금 현물 매매차익은 비과세(0%)',
+                        'warning': '⚠️ 일반계좌에서는 금 ETF 대신 KRX 금 현물 권장'
+                    }
+                }
+            },
+            '대체투자': {
+                'priority_order': ['IRP/연금저축', 'ISA', '일반계좌'],
+                'account_details': {
+                    '1순위_IRP연금저축': {
+                        'products': ['리츠(REITs) ETF/펀드'],
+                        'reason': '리츠의 높은 배당소득(15.4%)을 이연시켜 재투자. 복리 효과 최대',
+                        'tax_saving': '15.4% → 3.3~5.5%'
+                    },
+                    '2순위_ISA': {
+                        'products': ['리츠(REITs) ETF/펀드'],
+                        'reason': '높은 배당소득을 9.9% 저율과세로 감면',
+                        'tax_saving': '15.4% → 9.9%'
+                    },
+                    '3순위_일반계좌': {
+                        'products': ['상장 리츠 ETF'],
+                        'reason': '1, 2순위 한도 초과 시 사용',
+                        'warning': '⚠️ 배당이 많으므로 금융소득종합과세 2,000만원 한도 유의'
+                    }
+                }
+            }
+        }
+
+        return strategy
+
+    def _generate_execution_steps(self, asset_allocation: dict,
+                                   account_info: dict,
+                                   monthly_investment: float) -> list:
+        """실행 단계 가이드 생성"""
+
+        steps = []
+        current_step = 1
+
+        if monthly_investment > 0:
+            steps.append({
+                'step': current_step,
+                'title': '월 투자금액 계좌별 배분',
+                'description': f'월 {monthly_investment:,.0f}원을 절세 계좌 우선순위에 따라 배분',
+                'action': '위의 account_allocation 결과 참고'
+            })
+            current_step += 1
+
+        steps.extend([
+            {
+                'step': current_step,
+                'title': 'IRP/연금저축 계좌 우선 투자',
+                'description': '세금이 많이 발생하는 상품을 최우선 배치',
+                'action': '해외주식 ETF → 채권형 ETF → 리츠 ETF 순서로 투자'
+            },
+            {
+                'step': current_step + 1,
+                'title': 'ISA 계좌 투자',
+                'description': 'IRP 한도 초과분을 ISA에 투자 (총 1억 한도까지)',
+                'action': '고배당주 → 채권 → 금 ETF 순서로 투자'
+            },
+            {
+                'step': current_step + 2,
+                'title': '일반계좌 투자',
+                'description': '세금이 원래 적거나 없는 상품 위주',
+                'action': '국내 상장주식 → KRX 금 현물 → 비과세 채권 순서로 투자'
+            },
+            {
+                'step': current_step + 3,
+                'title': '연 1회 리밸런싱',
+                'description': '목표 자산배분 비율 유지',
+                'action': '매년 12월 또는 목표 비중 대비 ±5% 이상 이탈 시 실행'
+            }
+        ])
+
+        return steps
+
+    def _generate_implementation_warnings(self) -> list:
+        """실행 시 주의사항"""
+
+        return [
+            {
+                'category': '절세 함정 주의',
+                'warnings': [
+                    '❌ 국내 상장주식을 IRP/연금계좌에 넣지 마세요 (비과세 혜택 상실)',
+                    '❌ 세금이 적은 상품(국내주식)을 세금 혜택 계좌에 넣어 한도 낭비하지 마세요',
+                    '✅ 세금이 많은 상품(해외ETF, 채권, 리츠)을 절세 계좌에 우선 배치하세요'
+                ]
+            },
+            {
+                'category': '계좌 한도 관리',
+                'warnings': [
+                    'IRP 연 1,800만원 한도 (월 150만원 권장)',
+                    'ISA 연 2,000만원 한도, 총 1억원 한도 (월 166만원 권장)',
+                    'ISA 1억 달성 시 일반계좌로 자동 전환'
+                ]
+            },
+            {
+                'category': '금융소득종합과세 주의',
+                'warnings': [
+                    '일반계좌의 이자+배당 소득이 연 2,000만원 초과 시 종합과세 대상',
+                    '고배당 상품(리츠, 배당주)은 가급적 IRP/ISA에 배치 권장',
+                    '초과 시 세율이 6.6%~49.5%까지 급증할 수 있음'
+                ]
+            }
+        ]
 
     def monitor_portfolio_performance(self, portfolio_returns: dict,
                                       benchmark_returns: dict,
                                       time_period: str) -> dict:
-        """포트폴리오 성과 분석 및 위험조정 지표 계산"""
+        """성과 분석 (간소화)"""
 
         portfolio_return = portfolio_returns.get('total_return', 0.0)
         portfolio_volatility = portfolio_returns.get('volatility', 0.0)
         benchmark_return = benchmark_returns.get('total_return', 0.0)
 
-        # 한국형 성과 평가 기준
         risk_free_rate = KOR_2025.PERF.risk_free_rate
         if portfolio_volatility > 0:
-            sharpe_ratio = (portfolio_return - risk_free_rate) / \
-                portfolio_volatility
+            sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_volatility
         else:
             sharpe_ratio = 0
 
         excess_return = portfolio_return - benchmark_return
 
+        # 최대낙폭 계산
         returns_list = portfolio_returns.get('monthly_returns', [])
         if returns_list:
             cumulative = np.cumprod([1 + r for r in returns_list])
@@ -392,95 +515,14 @@ class ToojaService:
         else:
             max_drawdown = 0
 
-        # 한국형 성과 등급
-        performance_grade = self._korean_performance_grade(excess_return, sharpe_ratio, max_drawdown)
-
         return {
             'period': time_period,
             'portfolio_return': round(portfolio_return * 100, 2),
             'benchmark_return': round(benchmark_return * 100, 2),
             'excess_return': round(excess_return * 100, 2),
-            'volatility': round(portfolio_volatility * 100, 2),
             'sharpe_ratio': round(sharpe_ratio, 2),
-            'max_drawdown': round(max_drawdown, 2),
-            'performance_grade': performance_grade,
-            'risk_adjusted_metrics': {
-                '샤프비율': round(sharpe_ratio, 2),
-                '변동성': f"{round(portfolio_volatility * 100, 2)}%",
-                '최대낙폭': f"{round(max_drawdown, 2)}%"
-            },
-            'recommendations': self._generate_performance_recommendations(
-                excess_return, sharpe_ratio, max_drawdown
-            )
+            'max_drawdown': round(max_drawdown, 2)
         }
-
-    def _korean_rebalancing_rules(self) -> dict:
-        """한국형 리밸런싱 규칙"""
-        return {
-            '정기 리밸런싱': {
-                '주기': '분기별 검토, 연 1회 실행 (매년 12월)',
-                '방법': '목표 배분 대비 ±5% 이상 차이시 조정',
-                '거래비용_고려': '0.1% 이상시 연기 검토'
-            },
-            '긴급 리밸런싱': {
-                '조건': '목표 배분 대비 ±8% 이상 차이 발생',
-                '방법': '즉시 재조정 실시',
-                '집중도_제한': f"단일 자산 {KOR_2025.REG.max_concentration_ratio*100:.0f}% 이하 유지"
-            },
-            '추가 투자시': {
-                '원칙': '비중이 낮은 자산 위주로 매수',
-                '방법': '자동 목표배분 유지',
-                '세제혜택_우선': 'IRP/연금저축 한도 내 우선 배치'
-            },
-            '한국_특화_규칙': {
-                '국내해외_균형': '국내 60%, 해외 40% 기준 유지',
-                '리츠_비중': f"{KOR_2025.MKT.reit_ratio*100:.0f}% 유지",
-                '변동성_대응': '코스피 변동성 1.2배 이상시 주식 비중 축소'
-            }
-        }
-
-    def _korean_performance_grade(self, excess_return: float, sharpe_ratio: float, max_drawdown: float) -> str:
-        """한국형 성과 등급 평가"""
-        bench = KOR_2025.PERF.sharpe_benchmark
-        mdd_lim = KOR_2025.PERF.mdd_limits
-        
-        if excess_return > 0.02 and sharpe_ratio >= bench['excellent'] and abs(max_drawdown) <= mdd_lim['conservative']:
-            return 'A+ (최우수)'
-        elif excess_return > 0.02 and sharpe_ratio >= bench['good']:
-            return 'A (우수)'
-        elif excess_return > 0 and sharpe_ratio >= bench['ok']:
-            return 'B (양호)'
-        elif excess_return > -0.02 and sharpe_ratio >= bench['weak']:
-            return 'C (보통)'
-        else:
-            return 'D (부진)'
-
-    def _generate_performance_recommendations(self, excess_return, sharpe_ratio, max_drawdown):
-        """한국형 성과 기반 권장사항 생성"""
-        recommendations = []
-        bench = KOR_2025.PERF.sharpe_benchmark
-        mdd_lim = KOR_2025.PERF.mdd_limits
-
-        if excess_return < 0:
-            recommendations.append('벤치마크 대비 저조한 성과. 포트폴리오 점검이 필요합니다.')
-
-        if sharpe_ratio < bench['ok']:
-            recommendations.append('위험 대비 수익이 낮습니다. 자산배분 재검토를 권장합니다.')
-
-        if abs(max_drawdown) > mdd_lim['moderate']:
-            recommendations.append('큰 낙폭이 발생했습니다. 변동성 관리가 필요합니다.')
-
-        if not recommendations:
-            recommendations.append('전반적으로 양호한 성과를 보이고 있습니다. 현재 전략을 유지하세요.')
-
-        # 한국 특화 권장사항
-        recommendations.extend([
-            '국내/해외 주식 비중을 60:40으로 유지하세요.',
-            '리츠 비중을 5% 수준으로 유지하세요.',
-            '세제혜택 계좌(IRP, 연금저축)를 최대한 활용하세요.'
-        ])
-
-        return recommendations
 
 
 # ========== MCP Server 설정 ==========
@@ -495,102 +537,90 @@ async def serve() -> None:
         return [
             Tool(
                 name=ToojaTools.ASSESS_RISK_PROFILE.value,
-                description="사용자의 투자 성향과 제약조건을 분석합니다",
+                description="투자 성향 분석 (간소화)",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "demographic_info": {
-                            "type": "object",
-                            "description": "나이, 은퇴목표 등"
-                        },
-                        "financial_capacity": {
-                            "type": "object",
-                            "description": "자산규모, 소득안정성"
-                        },
-                        "liquidity_requirements": {
-                            "type": "object",
-                            "description": "유동성 필요 시점"
-                        },
-                        "behavioral_preferences": {
-                            "type": "object",
-                            "description": "위험성향 설문 결과"
-                        }
+                        "demographic_info": {"type": "object"},
+                        "financial_capacity": {"type": "object"},
+                        "liquidity_requirements": {"type": "object"},
+                        "behavioral_preferences": {"type": "object"}
                     },
                     "required": ["demographic_info", "behavioral_preferences"]
                 }
             ),
             Tool(
                 name=ToojaTools.GENERATE_PORTFOLIOS.value,
-                description="보수/중립/성장형 3가지 포트폴리오를 생성합니다",
+                description="포트폴리오 3가지 생성 (간소화)",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "risk_constraints": {
-                            "type": "object",
-                            "description": "위험 제약조건"
-                        }
+                        "risk_constraints": {"type": "object"}
                     },
                     "required": ["risk_constraints"]
                 }
             ),
             Tool(
                 name=ToojaTools.ADJUST_VOLATILITY.value,
-                description="시장 변동성에 따라 포트폴리오를 조정합니다",
+                description="변동성 조정 (간소화)",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "base_portfolio": {
-                            "type": "object",
-                            "description": "기본 포트폴리오"
-                        },
-                        "market_volatility_data": {
-                            "type": "object",
-                            "description": "시장 변동성 데이터"
-                        }
+                        "base_portfolio": {"type": "object"},
+                        "market_volatility_data": {"type": "object"}
                     },
                     "required": ["base_portfolio", "market_volatility_data"]
                 }
             ),
             Tool(
                 name=ToojaTools.BUILD_IMPLEMENTATION.value,
-                description="계좌별 실행 계획을 수립합니다",
+                description="실행 계획 수립 - 절세 최적화 버전 (자산별 계좌 배치 전략 포함)",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "optimized_portfolio": {
-                            "type": "object",
-                            "description": "최적화된 포트폴리오"
-                        },
-                        "current_holdings": {
-                            "type": "object",
-                            "description": "현재 보유 자산"
-                        },
+                        "optimized_portfolio": {"type": "object"},
+                        "current_holdings": {"type": "object"},
                         "account_info": {
                             "type": "object",
-                            "description": "계좌 정보"
+                            "properties": {
+                                "monthly_investment": {"type": "number"},
+                                "isa_accumulated": {"type": "number"},
+                                "has_irp": {"type": "boolean"},
+                                "has_pension_savings": {"type": "boolean"}
+                            }
                         }
                     },
                     "required": ["optimized_portfolio", "account_info"]
                 }
             ),
             Tool(
-                name=ToojaTools.MONITOR_PERFORMANCE.value,
-                description="포트폴리오 성과를 모니터링하고 분석합니다",
+                name=ToojaTools.CALCULATE_ACCOUNT_ALLOCATION.value,
+                description="월 투자금액 기반 계좌별 배분 계산 (IRP → ISA → 일반계좌 우선순위)",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "portfolio_returns": {
-                            "type": "object",
-                            "description": "포트폴리오 수익률"
+                        "monthly_investment": {
+                            "type": "number",
+                            "description": "월 투자 가능 금액 (원)"
                         },
-                        "benchmark_returns": {
-                            "type": "object",
-                            "description": "벤치마크 수익률"
-                        },
-                        "time_period": {
-                            "type": "string",
-                            "description": "분석 기간"
+                        "isa_accumulated": {
+                            "type": "number",
+                            "description": "ISA 계좌 누적 입금액 (원)",
+                            "default": 0
                         }
+                    },
+                    "required": ["monthly_investment"]
+                }
+            ),
+            Tool(
+                name=ToojaTools.MONITOR_PERFORMANCE.value,
+                description="포트폴리오 성과 분석 (간소화)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "portfolio_returns": {"type": "object"},
+                        "benchmark_returns": {"type": "object"},
+                        "time_period": {"type": "string"}
                     },
                     "required": ["portfolio_returns", "benchmark_returns", "time_period"]
                 }
@@ -630,6 +660,12 @@ async def serve() -> None:
                         arguments['optimized_portfolio'],
                         arguments.get('current_holdings', {}),
                         arguments['account_info']
+                    )
+
+                case ToojaTools.CALCULATE_ACCOUNT_ALLOCATION.value:
+                    result = service.calculate_monthly_account_allocation(
+                        arguments['monthly_investment'],
+                        arguments.get('isa_accumulated', 0)
                     )
 
                 case ToojaTools.MONITOR_PERFORMANCE.value:
