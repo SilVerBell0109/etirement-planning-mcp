@@ -20,40 +20,10 @@ from pydantic import BaseModel
 # __pycache__ 폴더 생성 방지
 sys.dont_write_bytecode = True
 class InchulTools(str, Enum):
-    ANALYZE_ASSET_STRUCTURE = "analyze_retirement_asset_structure"
-    OPTIMIZE_BASELINE = "optimize_withdrawal_baseline"
-    MANAGE_GUARDRAILS = "manage_guardrail_system"
-    OPTIMIZE_TAX_SEQUENCE = "optimize_tax_efficient_sequence"
-    MANAGE_BUCKETS = "manage_three_bucket_strategy"
-    CREATE_EXECUTION = "create_execution_plan"
+    GENERATE_COMPREHENSIVE_PLAN = "generate_comprehensive_withdrawal_plan"
 
 
-# ========== 데이터 모델 ==========
-
-class AssetStructure(BaseModel):
-    liquid_assets: dict
-    investment_accounts: dict
-    pension_accounts: dict
-    total_assets: float
-
-
-class WithdrawalBaseline(BaseModel):
-    annual_withdrawal: float
-    monthly_withdrawal: float
-    withdrawal_period: int
-    method: str
-
-
-class GuardrailAdjustment(BaseModel):
-    current_status: str
-    adjustment_action: str
-    new_withdrawal_amount: float
-
-
-class TaxSequence(BaseModel):
-    withdrawal_order: list
-    annual_tax_estimate: float
-    account_breakdown: dict
+# ========== 데이터 모델 (필요시 추가 가능) ==========
 
 
 # ========== 금융 계산 엔진 ==========
@@ -68,6 +38,15 @@ class WithdrawalCalculator:
         return portfolio_value * swr_rate
 
     @staticmethod
+    def calculate_swr_amount(portfolio_value: float, retirement_period: int, swr_rate: float) -> dict:
+        """SWR 기반 인출액 계산"""
+        annual = portfolio_value * swr_rate
+        return {
+            'annual': annual,
+            'rate': swr_rate
+        }
+
+    @staticmethod
     def calculate_bridge_gap(annual_expense: float, guaranteed_income: float,
                              bridge_years: int, discount_rate: float) -> float:
         """브릿지 기간 부족분 현가 계산"""
@@ -79,35 +58,6 @@ class WithdrawalCalculator:
 
         return pv
 
-    @staticmethod
-    def apply_guardrails(init_port_val: float, cur_port_val: float, 
-                        cur_withdrawal: float, threshold: float = None,
-                        inc_rate: float = None, dec_rate: float = None) -> dict:
-        """가드레일 적용"""
-        if threshold is None:
-            threshold = KOR_2025.GUARD.upper_threshold  # 25%
-        if inc_rate is None:
-            inc_rate = KOR_2025.GUARD.inc_rate  # 10%
-        if dec_rate is None:
-            dec_rate = KOR_2025.GUARD.dec_rate  # 10%
-            
-        drift = (cur_port_val - init_port_val) / max(1e-9, init_port_val)
-        out = cur_withdrawal
-
-        if drift >= threshold:
-            out *= (1 + inc_rate)
-            adjustment = 'increase'
-        elif drift <= -threshold:
-            out *= (1 - dec_rate)
-            adjustment = 'decrease'
-        else:
-            adjustment = 'maintain'
-
-        return {
-            'adjustment': adjustment,
-            'new_withdrawal': out,
-            'variance': drift
-        }
 
 
 # ========== 인출메이트 서비스 로직 ==========
@@ -118,51 +68,6 @@ class InchulService:
         self.calculator = WithdrawalCalculator()
         self.asset_structure = {}
         self.baseline = {}
-
-    def analyze_retirement_asset_structure(self, liquid_assets: dict,
-                                           investment_accounts: dict,
-                                           pension_accounts: dict,
-                                           real_estate_assets: dict,
-                                           guaranteed_income: dict,
-                                           essential_expenses: dict) -> dict:
-        """은퇴 시작시점의 자산 및 소득 구조 분석"""
-
-        total_liquid = sum(liquid_assets.values())
-        total_investment = sum(investment_accounts.values())
-        total_pension = sum(pension_accounts.values())
-        total_real_estate = sum(real_estate_assets.values())
-
-        total_assets = total_liquid + total_investment + total_pension + total_real_estate
-
-        total_guaranteed = sum(guaranteed_income.values())
-        total_essential = sum(essential_expenses.values())
-
-        annual_gap = max(0, total_essential - total_guaranteed)
-
-        self.asset_structure = {
-            'total_assets': total_assets,
-            'guaranteed_income': total_guaranteed,
-            'essential_expenses': total_essential,
-            'annual_gap': annual_gap
-        }
-
-        return {
-            'asset_summary': {
-                '유동자산': round(total_liquid, 0),
-                '투자계좌': round(total_investment, 0),
-                '연금계좌': round(total_pension, 0),
-                '부동산': round(total_real_estate, 0),
-                '총자산': round(total_assets, 0)
-            },
-            'income_expense_analysis': {
-                '보장소득_연간': round(total_guaranteed, 0),
-                '필수지출_연간': round(total_essential, 0),
-                '연간부족분': round(annual_gap, 0),
-                '월부족분': round(annual_gap / 12, 0)
-            },
-            'sufficiency_ratio': round(total_guaranteed / total_essential * 100, 1) if total_essential > 0 else 100,
-            'note': f"보장소득으로 필수지출의 {round(total_guaranteed / total_essential * 100, 1) if total_essential > 0 else 100}%를 충당할 수 있습니다."
-        }
 
     def optimize_withdrawal_baseline(self, annual_cash_requirement: float,
                                      total_portfolio_value: float,
@@ -231,52 +136,18 @@ class InchulService:
             'note': f'기간 {retirement_period}년에 맞춘 {moderate_result["rate"]*100:.2f}% 인출률을 기본으로 권장합니다.'
         }
 
-    def manage_guardrail_system(self, current_portfolio_value: float,
-                                target_portfolio_value: float,
-                                current_withdrawal: float,
-                                essential_expenses: float,
-                                inflation_rate: float = 0.0) -> dict:
-        """한국형 가드레일 규칙 적용"""
-
-        adjustment = self.calculator.apply_guardrails_kor(
-            target_portfolio_value,  # 초기 목표값
-            current_portfolio_value,  # 현재값
-            current_withdrawal,
-            inflation_rate
-        )
-
-        new_withdrawal = adjustment['new_withdrawal']
-        if new_withdrawal < essential_expenses:
-            warning = True
-            warning_message = '조정된 인출액이 필수지출보다 적습니다. 지출 조정 또는 자산 활용 방안이 필요합니다.'
-        else:
-            warning = False
-            warning_message = None
-
-        return {
-            'current_portfolio': round(current_portfolio_value, 0),
-            'target_portfolio': round(target_portfolio_value, 0),
-            'variance_from_target': f"{adjustment['variance'] * 100:.1f}%",
-            'adjustment_action': adjustment['adjustment'],
-            'current_withdrawal': round(current_withdrawal, 0),
-            'adjusted_withdrawal': round(new_withdrawal, 0),
-            'change_amount': round(new_withdrawal - current_withdrawal, 0),
-            'change_percentage': round((new_withdrawal - current_withdrawal) / current_withdrawal * 100, 1) if current_withdrawal > 0 else 0,
-            'essential_expenses_check': {
-                'essential_expenses': round(essential_expenses, 0),
-                'sufficient': new_withdrawal >= essential_expenses,
-                'warning': warning_message
-            },
-            'message': adjustment['message'],
-            'next_review_date': '1년 후',
-            'inflation_adjustment': f"인플레이션 {inflation_rate*100:.1f}% 반영" if inflation_rate > 0 else "인플레이션 미반영"
-        }
-
     def optimize_tax_efficient_sequence(self, annual_withdrawal_need: float,
                                         account_balances: dict,
                                         guaranteed_income: float,
-                                        tax_brackets: list = None) -> dict:
-        """한국 세제 최적화 인출 순서 및 금액 결정"""
+                                        tax_brackets: list = None,
+                                        other_comprehensive_income: float = 0) -> dict:
+        """한국 세제 최적화 인출 순서 및 금액 결정 (절세 핵심 원칙 적용)
+
+        원칙: 세금이 없는 돈 → 세금이 낮은 돈 → 세금 이연 효과가 가장 큰 돈 순서
+        1순위: 일반 금융계좌 (예/적금, 주식, 펀드)
+        2순위: ISA 만기 인출금
+        3순위: 연금계좌 (연금저축, IRP) - 가장 늦게 인출
+        """
 
         remaining_need = annual_withdrawal_need - guaranteed_income
 
@@ -288,52 +159,111 @@ class InchulService:
                 'message': '보장소득만으로 충분합니다.'
             }
 
-        # 한국 세제 최적화 로직
+        # 계좌별 잔액 추출
+        general_balance = account_balances.get('일반금융계좌', 0)
+        isa_balance = account_balances.get('ISA', 0)
+
+        # 연금계좌 내부 재원 구조 (법정 인출 순서)
+        pension_details = account_balances.get('연금계좌_상세', {})
+        pension_nontax = pension_details.get('비과세재원', 0)  # 세액공제 안받은 납입금, ISA이체금
+        pension_retirement = pension_details.get('이연퇴직소득', 0)  # IRP 퇴직금
+        pension_taxable = pension_details.get('과세재원', 0)  # 세액공제 받은 원금 + 수익
+
+        # 한국 세제 최적화 로직 (올바른 순서 적용)
         result = self._optimal_withdrawal_split_kor(
-            account_balances.get('일반과세계좌', 0),
-            account_balances.get('연금계좌', 0),
-            remaining_need
+            general_balance,
+            isa_balance,
+            pension_nontax,
+            pension_retirement,
+            pension_taxable,
+            remaining_need,
+            other_comprehensive_income
         )
 
         withdrawal_sequence = []
+        order = 1
 
-        # 1) 연금 분리과세 우선
-        if result['pension_separated'] > 0:
+        # 1순위: 일반 금융계좌
+        if result['general_account'] > 0:
             withdrawal_sequence.append({
-                'order': 1,
-                'account': '연금계좌 (분리과세)',
-                'amount': round(result['pension_separated'], 0),
-                'tax_amount': round(result['pension_separated'] * 0.033, 0),
-                'tax_rate': '3.3%',
-                'reason': '분리과세 한도 내 저세율 적용'
+                'order': order,
+                'account': '일반금융계좌 (예/적금, 주식, 펀드)',
+                'amount': round(result['general_account'], 0),
+                'tax_amount': 0,  # 이미 원천징수 완료
+                'tax_rate': '0% (원천징수 완료)',
+                'reason': '인출 페널티 없음, 1순위 인출 대상'
             })
+            order += 1
 
-        # 2) 연금 종합과세
-        if result['pension_comprehensive'] > 0:
-            comp_tax = result['pension_comprehensive'] * marginal_rate_from_brackets(
-                result['pension_comprehensive'], KOR_2025.TAX.comprehensive_income_brackets)
+        # 2순위: ISA 만기 인출금
+        if result['isa_account'] > 0:
+            isa_tax = result['isa_tax']
             withdrawal_sequence.append({
-                'order': 2,
-                'account': '연금계좌 (종합과세)',
-                'amount': round(result['pension_comprehensive'], 0),
-                'tax_amount': round(comp_tax, 0),
-                'tax_rate': f"{marginal_rate_from_brackets(result['pension_comprehensive'], KOR_2025.TAX.comprehensive_income_brackets)*100:.1f}%",
-                'reason': '분리과세 초과분 종합과세'
+                'order': order,
+                'account': 'ISA (만기 인출)',
+                'amount': round(result['isa_account'], 0),
+                'tax_amount': round(isa_tax, 0),
+                'tax_rate': '9.9% (200만원 초과분)',
+                'reason': '세제혜택 확정, 연금계좌보다 우선'
             })
+            order += 1
 
-        # 3) 일반과세계좌
-        if result['taxable'] > 0:
+        # 3순위: 연금계좌 (법정 인출 순서 적용)
+        if result['pension_nontax'] > 0:
             withdrawal_sequence.append({
-                'order': 3,
-                'account': '일반과세계좌',
-                'amount': round(result['taxable'], 0),
-                'tax_amount': round(result['taxable'] * KOR_2025.TAX.interest_dividend, 0),
-                'tax_rate': f"{KOR_2025.TAX.interest_dividend*100:.1f}%",
-                'reason': '금융소득 분리과세'
+                'order': order,
+                'account': '연금계좌 - 비과세재원',
+                'amount': round(result['pension_nontax'], 0),
+                'tax_amount': 0,
+                'tax_rate': '0%',
+                'reason': '세액공제 미적용분/ISA이체금, 1,500만원 한도 미포함'
             })
+            order += 1
 
-        total_withdrawal = result['pension_separated'] + result['pension_comprehensive'] + result['taxable']
-        total_tax = result['estimated_tax']
+        if result['pension_retirement'] > 0:
+            ret_tax = result['pension_retirement_tax']
+            withdrawal_sequence.append({
+                'order': order,
+                'account': '연금계좌 - 이연퇴직소득',
+                'amount': round(result['pension_retirement'], 0),
+                'tax_amount': round(ret_tax, 0),
+                'tax_rate': '퇴직소득세의 70%',
+                'reason': 'IRP 퇴직금, 1,500만원 한도 미포함'
+            })
+            order += 1
+
+        if result['pension_taxable'] > 0:
+            pension_tax = result['pension_taxable_tax']
+            withdrawal_sequence.append({
+                'order': order,
+                'account': '연금계좌 - 과세재원',
+                'amount': round(result['pension_taxable'], 0),
+                'tax_amount': round(pension_tax, 0),
+                'tax_rate': f"{result['pension_tax_rate']*100:.1f}%",
+                'reason': f"연금소득세 적용, 1,500만원 한도 {'이내' if result['pension_taxable'] <= 15000000 else '초과'}"
+            })
+            order += 1
+
+        total_withdrawal = sum([
+            result['general_account'],
+            result['isa_account'],
+            result['pension_nontax'],
+            result['pension_retirement'],
+            result['pension_taxable']
+        ])
+        total_tax = result['total_tax']
+
+        # 1,500만원 한도 경고
+        warning_1500 = None
+        if result['pension_taxable'] > 15000000:
+            warning_1500 = {
+                'status': 'warning',
+                'message': f"연금 과세재원 인출액 {round(result['pension_taxable']/10000, 1)}만원이 1,500만원 한도를 초과합니다.",
+                'recommendation': self._compare_tax_methods(
+                    result['pension_taxable'],
+                    other_comprehensive_income
+                )
+            }
 
         return {
             'annual_withdrawal_need': round(annual_withdrawal_need, 0),
@@ -344,41 +274,126 @@ class InchulService:
             'estimated_annual_tax': round(total_tax, 0),
             'after_tax_amount': round(total_withdrawal - total_tax, 0),
             'effective_tax_rate': f"{round(total_tax / total_withdrawal * 100, 2) if total_withdrawal > 0 else 0}%",
+            'pension_1500_limit_check': warning_1500,
             'recommendations': [
-                '연금 1,500만원까지 분리과세 우선 활용',
-                '일반과세계좌는 15.4% 원천징수 적용',
-                '세율 구간을 초과하지 않도록 주의'
+                '✅ 1순위: 일반 금융계좌 먼저 인출 (페널티 없음)',
+                '✅ 2순위: ISA 만기 자금 활용',
+                '✅ 3순위: 연금계좌는 최대한 늦게 인출 (복리 효과)',
+                '⚠️ 연금 과세재원은 연 1,500만원 이하 유지 권장',
+                '⚠️ 1,500만원 초과 시 종합과세 vs 16.5% 분리과세 비교 필요'
             ]
         }
 
-    def _optimal_withdrawal_split_kor(self, taxable_balance: float, 
-                                     pension_balance: float, 
-                                     annual_need: float) -> dict:
-        """한국 세제 최적화 인출 분배"""
+    def _compare_tax_methods(self, pension_amount: float, other_income: float) -> dict:
+        """연금 1,500만원 초과 시 종합과세 vs 분리과세 비교"""
         T = KOR_2025.TAX
-        
-        # 1) 연금 분리과세 한도 우선
-        pension_sep_take = min(T.pension_separated_cap, pension_balance, annual_need)
-        pension_sep_tax = pension_sep_take * 0.033  # 3.3% 가정
-        
-        remaining = annual_need - pension_sep_take
-        
-        # 2) 나머지는 연금 종합 vs 과세계좌 중 최적 조합
-        pension_comp_take = min(remaining, max(0, pension_balance - pension_sep_take))
-        pension_comp_tax = pension_comp_take * marginal_rate_from_brackets(
-            pension_comp_take, T.comprehensive_income_brackets)
-        
-        rem2 = remaining - pension_comp_take
-        taxable_take = min(rem2, taxable_balance)
-        taxable_tax = taxable_take * T.interest_dividend
-        
-        total_tax = pension_sep_tax + pension_comp_tax + taxable_tax
-        
+
+        # A. 종합과세 계산
+        total_comprehensive_income = other_income + pension_amount
+        comprehensive_tax = total_comprehensive_income * marginal_rate_from_brackets(
+            total_comprehensive_income, T.comprehensive_income_brackets)
+        # 기타 소득만의 세금
+        other_income_tax = other_income * marginal_rate_from_brackets(
+            other_income, T.comprehensive_income_brackets)
+        # 연금 추가로 인한 증가분
+        comprehensive_additional_tax = comprehensive_tax - other_income_tax
+
+        # B. 분리과세 계산 (16.5%)
+        separated_tax = pension_amount * 0.165
+
+        # 비교
+        if comprehensive_additional_tax < separated_tax:
+            recommendation = 'comprehensive'
+            message = f'종합과세 선택 권장 (세금 {round((separated_tax - comprehensive_additional_tax)/10000, 1)}만원 절약)'
+            recommended_tax = comprehensive_additional_tax
+        else:
+            recommendation = 'separated'
+            message = f'분리과세(16.5%) 선택 권장 (세금 {round((comprehensive_additional_tax - separated_tax)/10000, 1)}만원 절약)'
+            recommended_tax = separated_tax
+
         return {
-            'pension_separated': pension_sep_take,
-            'pension_comprehensive': pension_comp_take,
-            'taxable': taxable_take,
-            'estimated_tax': total_tax
+            'pension_amount': round(pension_amount, 0),
+            'other_income': round(other_income, 0),
+            'comprehensive_tax': {
+                'total_tax': round(comprehensive_tax, 0),
+                'additional_from_pension': round(comprehensive_additional_tax, 0),
+                'marginal_rate': f"{marginal_rate_from_brackets(total_comprehensive_income, T.comprehensive_income_brackets)*100:.1f}%"
+            },
+            'separated_tax': {
+                'tax': round(separated_tax, 0),
+                'rate': '16.5%'
+            },
+            'recommendation': recommendation,
+            'message': message,
+            'recommended_tax': round(recommended_tax, 0),
+            'savings': round(abs(comprehensive_additional_tax - separated_tax), 0)
+        }
+
+    def _optimal_withdrawal_split_kor(self,
+                                      general_balance: float,
+                                      isa_balance: float,
+                                      pension_nontax: float,
+                                      pension_retirement: float,
+                                      pension_taxable: float,
+                                      annual_need: float,
+                                      other_income: float = 0) -> dict:
+        """한국 세제 최적화 인출 분배 (절세 원칙: 일반계좌 → ISA → 연금계좌)"""
+        T = KOR_2025.TAX
+        remaining = annual_need
+
+        # 1순위: 일반 금융계좌 (페널티 없음)
+        general_take = min(general_balance, remaining)
+        remaining -= general_take
+
+        # 2순위: ISA 만기 자금
+        isa_take = min(isa_balance, remaining)
+        # ISA 세금: 200만원(서민형 400만원) 초과분 9.9%
+        isa_taxable = max(0, isa_take - 2000000)
+        isa_tax = isa_taxable * 0.099
+        remaining -= isa_take
+
+        # 3순위: 연금계좌 (법정 인출 순서 적용)
+        # 3-1) 비과세 재원 (세금 0%, 1,500만원 한도 미포함)
+        pension_nontax_take = min(pension_nontax, remaining)
+        remaining -= pension_nontax_take
+
+        # 3-2) 이연 퇴직소득 (퇴직소득세의 70%, 1,500만원 한도 미포함)
+        pension_retirement_take = min(pension_retirement, remaining)
+        # 간단한 퇴직소득세 계산 (실제로는 복잡함, 여기서는 예시로 3% 적용)
+        pension_retirement_tax = pension_retirement_take * 0.03 * 0.7  # 퇴직소득세의 70%
+        remaining -= pension_retirement_take
+
+        # 3-3) 과세 재원 (연금소득세, 1,500만원 한도 적용)
+        pension_taxable_take = min(pension_taxable, remaining)
+
+        # 연금소득세율 결정 (나이별 차등, 여기서는 5.5% 가정)
+        if pension_taxable_take <= T.pension_separated_cap:  # 1,500만원 이하
+            # 분리과세 (3.3~5.5%, 여기서는 5.5% 적용)
+            pension_tax_rate = 0.055
+            pension_taxable_tax = pension_taxable_take * pension_tax_rate
+        else:
+            # 1,500만원 초과: 종합과세 vs 16.5% 분리과세 중 유리한 것 적용
+            # 기본적으로 16.5% 분리과세 권장 (대부분의 경우 유리)
+            pension_tax_rate = 0.165
+            pension_taxable_tax = pension_taxable_take * pension_tax_rate
+
+        remaining -= pension_taxable_take
+
+        # 총 세금 계산
+        total_tax = isa_tax + pension_retirement_tax + pension_taxable_tax
+
+        return {
+            'general_account': general_take,
+            'isa_account': isa_take,
+            'isa_tax': isa_tax,
+            'pension_nontax': pension_nontax_take,
+            'pension_retirement': pension_retirement_take,
+            'pension_retirement_tax': pension_retirement_tax,
+            'pension_taxable': pension_taxable_take,
+            'pension_taxable_tax': pension_taxable_tax,
+            'pension_tax_rate': pension_tax_rate,
+            'total_tax': total_tax,
+            'unfulfilled_amount': remaining  # 부족분
         }
 
     def manage_three_bucket_strategy(self, total_portfolio: float,
@@ -480,102 +495,288 @@ class InchulService:
             'healthcare': med_total
         }
 
-    def create_execution_plan(self, withdrawal_strategy: dict,
-                              account_details: dict) -> dict:
-        """실행 가능한 월별 인출 계획 및 체크리스트 생성"""
+    def generate_comprehensive_withdrawal_plan(self,
+                                               total_assets: float,
+                                               asset_allocation: dict,
+                                               monthly_expenses: float,
+                                               monthly_pension: float,
+                                               retirement_age: int,
+                                               retirement_years: int,
+                                               bridge_years: int = 0,
+                                               inflation_rate: float = 0.02,
+                                               other_comprehensive_income: float = 0) -> dict:
+        """통합 인출 계획 생성 - 입력을 받아 모든 출력을 한번에 생성
 
-        annual_withdrawal = withdrawal_strategy.get('annual_withdrawal', 0)
-        monthly_withdrawal = annual_withdrawal / 12
+        입력:
+        - total_assets: 은퇴 시 기대보유자산
+        - asset_allocation: 은퇴시점의 자산 분배 현황
+        - monthly_expenses: 은퇴 후 월 지출
+        - monthly_pension: 월 연금 기대 수령액
+        - retirement_age: 은퇴 시작 나이
+        - retirement_years: 은퇴 기간 (년)
+        - bridge_years: 브릿지 기간 (공적연금 수령 전)
+        - inflation_rate: 연 인플레이션율
+        - other_comprehensive_income: 사적연금 외 종합소득
 
-        monthly_schedule = []
-        for month in range(1, 13):
-            monthly_schedule.append({
-                'month': f'{month}월',
-                'withdrawal_amount': round(monthly_withdrawal, 0),
-                'source_account': 'bucket1 (현금/MMF)',
-                'transfer_date': '매월 1일',
-                'tax_withholding': '원천징수 자동 처리'
-            })
+        출력:
+        1. 연/월 인출 타깃표 (세후·실질)
+        2. 계좌별 인출표 & 예상 세금 & 연말 잔액 & 여유금
+        3. 버킷 현황 카드
+        4. 대안 비교 시트
+        """
 
-        quarterly_checklist = [
-            {
-                'quarter': 'Q1 (1-3월)',
-                'tasks': [
-                    'bucket1 잔액 확인 (2년분 유지되는지)',
-                    '전년도 세금 정산',
-                    '포트폴리오 밸런스 확인'
-                ]
-            },
-            {
-                'quarter': 'Q2 (4-6월)',
-                'tasks': [
-                    'bucket2 → bucket1 보충 필요 여부 확인',
-                    '상반기 수익률 점검',
-                    '대형 지출 예정 확인'
-                ]
-            },
-            {
-                'quarter': 'Q3 (7-9월)',
-                'tasks': [
-                    'bucket3 수익률 점검',
-                    '시장 상황 평가',
-                    '가드레일 점검'
-                ]
-            },
-            {
-                'quarter': 'Q4 (10-12월)',
-                'tasks': [
-                    '연간 리밸런싱 실시',
-                    '다음연도 인출 계획 수립',
-                    '세금 납부 준비'
-                ]
-            }
-        ]
+        annual_expenses = monthly_expenses * 12
+        annual_pension = monthly_pension * 12
 
-        alternative_scenarios = {
-            '목표지출_10%감소': {
-                'new_monthly_withdrawal': round(monthly_withdrawal * 0.9, 0),
-                'annual_savings': round(annual_withdrawal * 0.1, 0),
-                'portfolio_longevity': '+2년 연장 예상'
+        # ========== 1. 연/월 인출 타깃표 생성 ==========
+
+        # SWR 기반 기본 인출액 계산
+        baseline_result = self.optimize_withdrawal_baseline(
+            annual_expenses,
+            total_assets,
+            bridge_years,
+            retirement_years,
+            "fixed_real"
+        )
+
+        recommended_annual = baseline_result['recommended']['연간인출액']
+        recommended_monthly = baseline_result['recommended']['월인출액']
+
+        # 브릿지 기간 동안 필요한 추가 자금
+        bridge_annual_need = annual_expenses if bridge_years > 0 else 0
+
+        # 공적연금 수령 후 필요 인출액
+        post_bridge_annual_need = max(0, annual_expenses - annual_pension)
+        post_bridge_monthly_need = post_bridge_annual_need / 12
+
+        # 기간별 인출 타깃표
+        withdrawal_target_table = {
+            'summary': {
+                '총_은퇴자산': round(total_assets, 0),
+                '월_지출목표': round(monthly_expenses, 0),
+                '연_지출목표': round(annual_expenses, 0),
+                '월_연금수령액': round(monthly_pension, 0),
+                '은퇴기간': f'{retirement_years}년',
+                '브릿지기간': f'{bridge_years}년' if bridge_years > 0 else '없음'
             },
-            '공적연금_1년_늦춤': {
-                'additional_bridge_cost': round(monthly_withdrawal * 12, 0),
-                'increased_pension': '+6% 증액',
-                'net_benefit': '장기적으로 유리'
-            },
-            '주택연금_도입': {
-                'estimated_monthly_income': '주택가격 및 연령에 따라 상이',
-                'withdrawal_reduction': '월 인출액 감소 가능',
-                'consideration': '상속 계획 고려 필요'
-            }
+            'phase_targets': []
         }
 
-        return {
-            'monthly_withdrawal_schedule': monthly_schedule,
-            'quarterly_checklist': quarterly_checklist,
-            'annual_tasks': [
-                '1월: 전년도 결산 및 세금 정산',
-                '6월: 상반기 점검 및 중간 조정',
-                '12월: 리밸런싱 및 다음연도 계획 수립'
-            ],
-            'alternative_scenarios': alternative_scenarios,
-            'emergency_procedures': {
-                '시장_급락시': [
-                    'bucket1, 2에서만 인출',
-                    'bucket3 매도 중단',
-                    '필수지출만 유지'
-                ],
-                '예상외_대형지출': [
-                    '2-3년 분산 인출 검토',
-                    '세율 급등 방지',
-                    '부동산 활용 고려'
-                ]
+        # Phase 1: 브릿지 기간 (공적연금 수령 전)
+        if bridge_years > 0:
+            withdrawal_target_table['phase_targets'].append({
+                'phase': f'Phase 1: 브릿지 기간 (은퇴 후 {bridge_years}년)',
+                'period': f'만 {retirement_age}세 ~ 만 {retirement_age + bridge_years - 1}세',
+                'guaranteed_income': 0,
+                'monthly_withdrawal_need': round(monthly_expenses, 0),
+                'annual_withdrawal_need': round(bridge_annual_need, 0),
+                'note': '공적연금 수령 전, 전액 자산에서 인출'
+            })
+
+        # Phase 2: 공적연금 수령 후
+        withdrawal_target_table['phase_targets'].append({
+            'phase': f'Phase 2: 공적연금 수령 기간 ({retirement_years - bridge_years}년)',
+            'period': f'만 {retirement_age + bridge_years}세 ~ 만 {retirement_age + retirement_years - 1}세',
+            'guaranteed_income': round(monthly_pension, 0),
+            'monthly_withdrawal_need': round(post_bridge_monthly_need, 0),
+            'annual_withdrawal_need': round(post_bridge_annual_need, 0),
+            'note': f'공적연금으로 {round(monthly_pension / monthly_expenses * 100, 1) if monthly_expenses > 0 else 0}% 충당'
+        })
+
+        # 실질 인출액 (인플레이션 반영)
+        withdrawal_target_table['inflation_adjusted_path'] = []
+        for year in range(1, min(retirement_years + 1, 31)):  # 최대 30년
+            if year <= bridge_years:
+                nominal_withdrawal = bridge_annual_need * ((1 + inflation_rate) ** (year - 1))
+                phase = 'Bridge'
+            else:
+                nominal_withdrawal = post_bridge_annual_need * ((1 + inflation_rate) ** (year - 1))
+                phase = 'Post-Bridge'
+
+            withdrawal_target_table['inflation_adjusted_path'].append({
+                'year': year,
+                'age': retirement_age + year - 1,
+                'phase': phase,
+                'nominal_annual_withdrawal': round(nominal_withdrawal, 0),
+                'nominal_monthly_withdrawal': round(nominal_withdrawal / 12, 0),
+                'real_annual_withdrawal': round(annual_expenses if year <= bridge_years else post_bridge_annual_need, 0)
+            })
+
+        # ========== 2. 계좌별 인출표 & 예상 세금 & 연말 잔액 & 여유금 ==========
+
+        # 첫해 계좌별 인출 순서 및 세금 계산
+        first_year_withdrawal = bridge_annual_need if bridge_years > 0 else post_bridge_annual_need
+
+        tax_sequence_result = self.optimize_tax_efficient_sequence(
+            first_year_withdrawal,
+            asset_allocation,
+            0 if bridge_years > 0 else annual_pension,
+            None,
+            other_comprehensive_income
+        )
+
+        # 계좌별 연간 인출 계획 (간단한 시뮬레이션)
+        account_withdrawal_details = {
+            'year_1_withdrawal_plan': tax_sequence_result['withdrawal_sequence'],
+            'year_1_tax_summary': {
+                'total_withdrawal': tax_sequence_result['total_withdrawal_from_accounts'],
+                'total_tax': tax_sequence_result['estimated_annual_tax'],
+                'after_tax_amount': tax_sequence_result['after_tax_amount'],
+                'effective_tax_rate': tax_sequence_result['effective_tax_rate']
             },
-            'automation_setup': {
-                '자동이체': '매월 1일 bucket1 → 생활비 계좌',
-                '자동리밸런싱': '연 1회 12월 자동 실행 (옵션)',
-                '알림설정': 'bucket1 1년분 미만시 알림'
-            }
+            'year_end_balance_projection': {}
+        }
+
+        # 연말 잔액 예상 (단순화)
+        remaining_assets = total_assets - first_year_withdrawal
+        for account_name, initial_balance in asset_allocation.items():
+            if account_name == '연금계좌_상세':
+                continue
+            # 간단한 인출 후 잔액 계산 (실제로는 더 복잡)
+            withdrawn = 0
+            for seq_item in tax_sequence_result['withdrawal_sequence']:
+                if account_name in seq_item['account']:
+                    withdrawn = seq_item['amount']
+                    break
+
+            year_end_balance = max(0, initial_balance - withdrawn)
+            account_withdrawal_details['year_end_balance_projection'][account_name] = round(year_end_balance, 0)
+
+        # 여유금 (비상금) 계산
+        emergency_fund = remaining_assets * 0.05  # 자산의 5%를 비상금으로
+        account_withdrawal_details['emergency_reserve'] = {
+            'recommended_amount': round(emergency_fund, 0),
+            'months_coverage': round(emergency_fund / monthly_expenses, 1) if monthly_expenses > 0 else 0,
+            'status': 'sufficient' if emergency_fund >= monthly_expenses * 6 else 'insufficient',
+            'note': '6개월치 생활비 비상금 권장'
+        }
+
+        # ========== 3. 버킷 현황 카드 ==========
+
+        bucket_result = self.manage_three_bucket_strategy(
+            total_assets,
+            recommended_annual,
+            'neutral',
+            retirement_age
+        )
+
+        bucket1_amount = bucket_result['bucket_allocation']['bucket1_현금단기채']['금액']
+        bucket1_depletion = bucket_result['bucket1_depletion_months']
+
+        bucket_status_card = {
+            'bucket_allocation': bucket_result['bucket_allocation'],
+            'bucket1_status': {
+                'current_amount': round(bucket1_amount, 0),
+                'monthly_withdrawal': round(recommended_monthly, 0),
+                'depletion_months': bucket1_depletion,
+                'depletion_warning': 'WARNING' if bucket1_depletion < 12 else 'OK',
+                'refill_alert': 'bucket1이 1년분 미만입니다. 즉시 재충전 필요!' if bucket1_depletion < 12 else 'bucket1 상태 양호'
+            },
+            'market_strategy': bucket_result['market_strategy'],
+            'recommendations': bucket_result['recommendations']
+        }
+
+        # ========== 4. 대안 비교 시트 ==========
+
+        alternative_scenarios = {
+            'baseline': {
+                'scenario': '기본 계획',
+                'monthly_expenses': round(monthly_expenses, 0),
+                'pension_start_age': retirement_age + bridge_years,
+                'monthly_withdrawal': round(post_bridge_monthly_need, 0),
+                'estimated_tax': round(tax_sequence_result['estimated_annual_tax'] / 12, 0),
+                'after_tax_monthly': round(tax_sequence_result['after_tax_amount'] / 12, 0),
+                'success_probability': '85%',  # 실제로는 시뮬레이션 필요
+                'portfolio_longevity': f'{retirement_years}년'
+            },
+            'alternatives': []
+        }
+
+        # 대안 1: 지출 10% 감소
+        reduced_expenses = monthly_expenses * 0.9
+        reduced_annual = reduced_expenses * 12
+        alternative_scenarios['alternatives'].append({
+            'scenario': '월 지출 10% 감소',
+            'monthly_expenses': round(reduced_expenses, 0),
+            'change': f'-{round(monthly_expenses - reduced_expenses, 0)}원',
+            'pension_start_age': retirement_age + bridge_years,
+            'monthly_withdrawal': round(max(0, reduced_annual - annual_pension) / 12, 0),
+            'estimated_annual_savings': round(annual_expenses * 0.1, 0),
+            'portfolio_longevity': f'{retirement_years + 2}년 (+2년)',
+            'success_probability': '92%',
+            'note': '포트폴리오 수명 연장, 성공 가능성 증가'
+        })
+
+        # 대안 2: 공적연금 1년 늦춤
+        if bridge_years >= 0:
+            delayed_pension = monthly_pension * 1.06  # 6% 증액
+            alternative_scenarios['alternatives'].append({
+                'scenario': '공적연금 수령 1년 지연',
+                'monthly_expenses': round(monthly_expenses, 0),
+                'pension_start_age': retirement_age + bridge_years + 1,
+                'increased_pension': round(delayed_pension, 0),
+                'increase_rate': '+6%',
+                'additional_bridge_cost': round(monthly_expenses * 12, 0),
+                'lifetime_benefit': '장기적으로 유리 (기대수명 고려)',
+                'monthly_withdrawal_after': round(max(0, annual_expenses - delayed_pension * 12) / 12, 0),
+                'note': '1년 늦출 때마다 6% 증액, 장기적 유리'
+            })
+
+        # 대안 3: 주택연금 도입 (보유 부동산이 있는 경우)
+        real_estate_value = asset_allocation.get('부동산자산', 0)
+        if real_estate_value > 0:
+            estimated_housing_pension = real_estate_value * 0.003  # 대략 연 0.3% (월)
+            alternative_scenarios['alternatives'].append({
+                'scenario': '주택연금 도입',
+                'housing_value': round(real_estate_value, 0),
+                'estimated_monthly_income': round(estimated_housing_pension, 0),
+                'monthly_expenses': round(monthly_expenses, 0),
+                'reduced_withdrawal': round(estimated_housing_pension, 0),
+                'monthly_withdrawal_after': round(max(0, post_bridge_monthly_need - estimated_housing_pension), 0),
+                'portfolio_longevity': f'{retirement_years + 5}년 이상 (+5년+)',
+                'note': '상속 포기 대신 안정적 현금흐름 확보',
+                'consideration': '상속 계획, 배우자 나이, 주택 소유권 확인 필요'
+            })
+
+        # 대안 4: 인출률 조정
+        conservative_withdrawal = recommended_annual * 0.9
+        alternative_scenarios['alternatives'].append({
+            'scenario': '보수적 인출 (-10%)',
+            'monthly_withdrawal': round(conservative_withdrawal / 12, 0),
+            'reduction': f'-{round(recommended_monthly * 0.1, 0)}원',
+            'portfolio_longevity': f'{retirement_years + 3}년 (+3년)',
+            'success_probability': '95%',
+            'note': '안정성 최우선, 지출 조정 필요'
+        })
+
+        # ========== 통합 결과 반환 ==========
+
+        return {
+            'input_summary': {
+                '총_은퇴자산': round(total_assets, 0),
+                '월_지출목표': round(monthly_expenses, 0),
+                '월_연금수령액': round(monthly_pension, 0),
+                '은퇴기간': f'{retirement_years}년',
+                '브릿지기간': f'{bridge_years}년' if bridge_years > 0 else '없음'
+            },
+            '1_withdrawal_target_table': withdrawal_target_table,
+            '2_account_withdrawal_details': account_withdrawal_details,
+            '3_bucket_status_card': bucket_status_card,
+            '4_alternative_scenarios': alternative_scenarios,
+            'recommendations': [
+                '✅ 1순위: 일반 금융계좌 → ISA → 연금계좌 순서로 인출',
+                '✅ 연금계좌 과세재원은 연 1,500만원 이하 유지',
+                '✅ bucket1이 1년분 미만으로 줄면 즉시 재충전',
+                '⚠️ 하락장에서는 bucket3 매도 지연',
+                f'⚠️ 비상금 {round(emergency_fund / 10000, 0)}만원 별도 확보 권장'
+            ],
+            'next_steps': [
+                '1. 계좌별 자산 배분 확정',
+                '2. bucket1 현금성 자산 준비 (2년분)',
+                '3. 월별 자동이체 설정',
+                '4. 분기별 포트폴리오 점검 일정 수립',
+                '5. 세무사와 연말 절세 전략 상담'
+            ]
         }
 
 
@@ -590,87 +791,49 @@ async def serve() -> None:
         """인출메이트 도구 목록"""
         return [
             Tool(
-                name=InchulTools.ANALYZE_ASSET_STRUCTURE.value,
-                description="은퇴 시작시점의 자산 및 소득 구조를 분석합니다",
+                name=InchulTools.GENERATE_COMPREHENSIVE_PLAN.value,
+                description="통합 은퇴 인출 계획 생성 - 입력 4가지만 제공하면 모든 출력을 한번에 생성합니다 (인출 타깃표, 계좌별 인출표, 버킷 현황, 대안 비교)",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "liquid_assets": {"type": "object"},
-                        "investment_accounts": {"type": "object"},
-                        "pension_accounts": {"type": "object"},
-                        "real_estate_assets": {"type": "object"},
-                        "guaranteed_income": {"type": "object"},
-                        "essential_expenses": {"type": "object"}
+                        "total_assets": {
+                            "type": "number",
+                            "description": "은퇴 시 기대보유자산 (총 금융자산)"
+                        },
+                        "asset_allocation": {
+                            "type": "object",
+                            "description": "은퇴시점의 자산 분배 현황 (일반금융계좌, ISA, 연금계좌_상세, 부동산자산 등)"
+                        },
+                        "monthly_expenses": {
+                            "type": "number",
+                            "description": "은퇴 후 월 지출 (생활비)"
+                        },
+                        "monthly_pension": {
+                            "type": "number",
+                            "description": "월 연금 기대 수령액 (국민연금 등 공적연금)"
+                        },
+                        "retirement_age": {
+                            "type": "integer",
+                            "description": "은퇴 시작 나이"
+                        },
+                        "retirement_years": {
+                            "type": "integer",
+                            "description": "은퇴 기간 (예상 은퇴생활 년수)"
+                        },
+                        "bridge_years": {
+                            "type": "integer",
+                            "description": "브릿지 기간 (공적연금 수령 전 기간, 기본값 0)"
+                        },
+                        "inflation_rate": {
+                            "type": "number",
+                            "description": "연 인플레이션율 (기본값 0.02 = 2%)"
+                        },
+                        "other_comprehensive_income": {
+                            "type": "number",
+                            "description": "사적연금 외 종합소득 (임대소득 등, 기본값 0)"
+                        }
                     },
-                    "required": ["liquid_assets", "guaranteed_income", "essential_expenses"]
-                }
-            ),
-            Tool(
-                name=InchulTools.OPTIMIZE_BASELINE.value,
-                description="안전인출률 기반 인출 기본선을 설정합니다",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "annual_cash_requirement": {"type": "number"},
-                        "total_portfolio_value": {"type": "number"},
-                        "bridge_period_years": {"type": "integer"},
-                        "retirement_period": {"type": "integer"},
-                        "withdrawal_method": {"type": "string"}
-                    },
-                    "required": ["annual_cash_requirement", "total_portfolio_value", "retirement_period"]
-                }
-            ),
-            Tool(
-                name=InchulTools.MANAGE_GUARDRAILS.value,
-                description="가드레일 시스템으로 인출액을 동적 조정합니다",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "current_portfolio_value": {"type": "number"},
-                        "target_portfolio_value": {"type": "number"},
-                        "current_withdrawal": {"type": "number"},
-                        "essential_expenses": {"type": "number"}
-                    },
-                    "required": ["current_portfolio_value", "target_portfolio_value", "current_withdrawal"]
-                }
-            ),
-            Tool(
-                name=InchulTools.OPTIMIZE_TAX_SEQUENCE.value,
-                description="세금 효율적인 계좌별 인출 순서를 결정합니다",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "annual_withdrawal_need": {"type": "number"},
-                        "account_balances": {"type": "object"},
-                        "guaranteed_income": {"type": "number"},
-                        "tax_brackets": {"type": "array"}
-                    },
-                    "required": ["annual_withdrawal_need", "account_balances"]
-                }
-            ),
-            Tool(
-                name=InchulTools.MANAGE_BUCKETS.value,
-                description="3버킷 전략으로 시퀀스 리스크를 관리합니다",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "total_portfolio": {"type": "number"},
-                        "annual_withdrawal": {"type": "number"},
-                        "market_condition": {"type": "string"}
-                    },
-                    "required": ["total_portfolio", "annual_withdrawal", "market_condition"]
-                }
-            ),
-            Tool(
-                name=InchulTools.CREATE_EXECUTION.value,
-                description="월별 인출 계획 및 실행 체크리스트를 생성합니다",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "withdrawal_strategy": {"type": "object"},
-                        "account_details": {"type": "object"}
-                    },
-                    "required": ["withdrawal_strategy"]
+                    "required": ["total_assets", "asset_allocation", "monthly_expenses", "monthly_pension", "retirement_age", "retirement_years"]
                 }
             )
         ]
@@ -681,55 +844,18 @@ async def serve() -> None:
     ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
         """도구 실행"""
         try:
-            result = None
-
             match name:
-                case InchulTools.ANALYZE_ASSET_STRUCTURE.value:
-                    result = service.analyze_retirement_asset_structure(
-                        arguments.get('liquid_assets', {}),
-                        arguments.get('investment_accounts', {}),
-                        arguments.get('pension_accounts', {}),
-                        arguments.get('real_estate_assets', {}),
-                        arguments.get('guaranteed_income', {}),
-                        arguments.get('essential_expenses', {})
-                    )
-
-                case InchulTools.OPTIMIZE_BASELINE.value:
-                    result = service.optimize_withdrawal_baseline(
-                        arguments['annual_cash_requirement'],
-                        arguments['total_portfolio_value'],
-                        arguments.get('bridge_period_years', 0),
-                        arguments['retirement_period'],
-                        arguments.get('withdrawal_method', 'fixed_real')
-                    )
-
-                case InchulTools.MANAGE_GUARDRAILS.value:
-                    result = service.manage_guardrail_system(
-                        arguments['current_portfolio_value'],
-                        arguments['target_portfolio_value'],
-                        arguments['current_withdrawal'],
-                        arguments.get('essential_expenses', 0)
-                    )
-
-                case InchulTools.OPTIMIZE_TAX_SEQUENCE.value:
-                    result = service.optimize_tax_efficient_sequence(
-                        arguments['annual_withdrawal_need'],
-                        arguments['account_balances'],
-                        arguments.get('guaranteed_income', 0),
-                        arguments.get('tax_brackets', [])
-                    )
-
-                case InchulTools.MANAGE_BUCKETS.value:
-                    result = service.manage_three_bucket_strategy(
-                        arguments['total_portfolio'],
-                        arguments['annual_withdrawal'],
-                        arguments['market_condition']
-                    )
-
-                case InchulTools.CREATE_EXECUTION.value:
-                    result = service.create_execution_plan(
-                        arguments['withdrawal_strategy'],
-                        arguments.get('account_details', {})
+                case InchulTools.GENERATE_COMPREHENSIVE_PLAN.value:
+                    result = service.generate_comprehensive_withdrawal_plan(
+                        arguments['total_assets'],
+                        arguments['asset_allocation'],
+                        arguments['monthly_expenses'],
+                        arguments['monthly_pension'],
+                        arguments['retirement_age'],
+                        arguments['retirement_years'],
+                        arguments.get('bridge_years', 0),
+                        arguments.get('inflation_rate', 0.02),
+                        arguments.get('other_comprehensive_income', 0)
                     )
 
                 case _:

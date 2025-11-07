@@ -27,6 +27,7 @@ class ToojaTools(str, Enum):
     BUILD_IMPLEMENTATION = "build_implementation_roadmap"
     CALCULATE_ACCOUNT_ALLOCATION = "calculate_monthly_account_allocation"
     MONITOR_PERFORMANCE = "monitor_portfolio_performance"
+    CALCULATE_RETIREMENT_ACHIEVEMENT = "calculate_retirement_achievement"
 
 
 # ========== 데이터 모델 ==========
@@ -524,6 +525,158 @@ class ToojaService:
             'max_drawdown': round(max_drawdown, 2)
         }
 
+    def calculate_retirement_achievement(self, current_age: int, retirement_age: int,
+                                        current_assets: float, required_retirement_assets: float,
+                                        monthly_investment: float = 0) -> dict:
+        """은퇴 목표 달성 여부 및 투자 전략 계산"""
+
+        years_to_retirement = retirement_age - current_age
+
+        if years_to_retirement <= 0:
+            return {
+                'error': '현재 나이가 목표 은퇴 나이보다 크거나 같습니다.'
+            }
+
+        # 목표: 필요 은퇴자산의 110%
+        target_assets = required_retirement_assets * 1.1
+
+        # 위험성향에 따른 예상 수익률 (연간)
+        expected_returns = {
+            'conservative': 0.045,  # 4.5%
+            'moderate': 0.06,       # 6.0%
+            'aggressive': 0.075     # 7.5%
+        }
+
+        # 각 시나리오별로 미래 자산 계산
+        scenarios = {}
+        for risk_level, annual_return in expected_returns.items():
+            # 현재 자산의 미래 가치 계산
+            future_value_current = current_assets * ((1 + annual_return) ** years_to_retirement)
+
+            # 월 투자금의 미래 가치 계산 (연금의 미래가치 공식)
+            if monthly_investment > 0:
+                monthly_rate = annual_return / 12
+                months = years_to_retirement * 12
+                future_value_monthly = monthly_investment * (((1 + monthly_rate) ** months - 1) / monthly_rate)
+            else:
+                future_value_monthly = 0
+
+            total_future_value = future_value_current + future_value_monthly
+
+            # 목표 달성률 계산
+            achievement_rate = (total_future_value / target_assets) * 100
+
+            scenarios[risk_level] = {
+                'expected_annual_return': round(annual_return * 100, 1),
+                'future_value_current_assets': round(future_value_current),
+                'future_value_monthly_investment': round(future_value_monthly),
+                'total_expected_assets': round(total_future_value),
+                'target_assets': round(target_assets),
+                'achievement_rate': round(achievement_rate, 1),
+                'achieves_110_target': achievement_rate >= 100
+            }
+
+        # 110% 목표 달성 가능한 최소 위험 포트폴리오 찾기
+        recommended_strategy = None
+        for risk_level in ['conservative', 'moderate', 'aggressive']:
+            if scenarios[risk_level]['achieves_110_target']:
+                recommended_strategy = risk_level
+                break
+
+        # 목표 달성을 위해 필요한 추가 월 투자액 계산 (moderate 기준)
+        required_additional_monthly = 0
+        if not scenarios['moderate']['achieves_110_target']:
+            moderate_return = expected_returns['moderate']
+            monthly_rate = moderate_return / 12
+            months = years_to_retirement * 12
+            future_value_current = current_assets * ((1 + moderate_return) ** years_to_retirement)
+
+            # 필요한 추가 자산
+            needed_from_monthly = target_assets - future_value_current
+
+            if needed_from_monthly > 0:
+                # 연금의 미래가치 공식을 역으로 계산
+                required_additional_monthly = needed_from_monthly * monthly_rate / (((1 + monthly_rate) ** months - 1))
+
+        return {
+            'financial_status': {
+                'current_age': current_age,
+                'retirement_age': retirement_age,
+                'years_to_retirement': years_to_retirement,
+                'current_assets': current_assets,
+                'monthly_investment': monthly_investment,
+                'required_retirement_assets': required_retirement_assets,
+                'target_assets_110': round(target_assets)
+            },
+            'scenarios': scenarios,
+            'recommendation': {
+                'recommended_strategy': recommended_strategy if recommended_strategy else 'aggressive',
+                'message': self._generate_achievement_message(
+                    scenarios,
+                    recommended_strategy,
+                    current_age,
+                    retirement_age,
+                    current_assets,
+                    target_assets,
+                    required_additional_monthly
+                )
+            }
+        }
+
+    def _generate_achievement_message(self, scenarios: dict, recommended_strategy: str,
+                                     current_age: int, retirement_age: int,
+                                     current_assets: float, target_assets: float,
+                                     required_additional_monthly: float) -> str:
+        """목표 달성 메시지 생성"""
+
+        if recommended_strategy:
+            scenario = scenarios[recommended_strategy]
+            return f"""
+재무 현황
+
+현재 나이: {current_age}세 → 목표 은퇴 나이: {retirement_age}세 ({retirement_age - current_age}년 남음)
+
+현재 투자자산: {current_assets:,.0f}원
+
+{retirement_age}세 예상 자산: {scenario['total_expected_assets']:,.0f}원
+
+필요 은퇴자산: {target_assets:,.0f}원 (목표 대비 110%)
+
+결론: 목표 대비 110% 달성 예정!
+
+권장 전략: {recommended_strategy.title()}형 포트폴리오 (연 {scenario['expected_annual_return']}% 수익률)
+- 목표 달성률: {scenario['achievement_rate']}%
+"""
+        else:
+            # 모든 시나리오가 목표 미달성
+            aggressive = scenarios['aggressive']
+            moderate = scenarios['moderate']
+
+            additional_msg = ""
+            if required_additional_monthly > 0:
+                additional_msg = f"\n또는, 현재 투자금액 유지 시 월 {required_additional_monthly:,.0f}원 추가 투자 필요 (Moderate 기준)"
+
+            return f"""
+재무 현황
+
+현재 나이: {current_age}세 → 목표 은퇴 나이: {retirement_age}세 ({retirement_age - current_age}년 남음)
+
+현재 투자자산: {current_assets:,.0f}원
+
+{retirement_age}세 예상 자산 (Aggressive): {aggressive['total_expected_assets']:,.0f}원
+
+필요 은퇴자산: {target_assets:,.0f}원 (목표 대비 110%)
+
+결론: 현재 계획으로는 목표 달성 어려움
+
+권장 조치:
+1. Aggressive형 포트폴리오 채택 (연 {aggressive['expected_annual_return']}% 수익률)
+   - 현재 달성률: {aggressive['achievement_rate']}%
+   - 부족 금액: {target_assets - aggressive['total_expected_assets']:,.0f}원{additional_msg}
+
+2. 은퇴 시기를 조정하거나 필요 자산을 재검토하세요.
+"""
+
 
 # ========== MCP Server 설정 ==========
 
@@ -624,6 +777,37 @@ async def serve() -> None:
                     },
                     "required": ["portfolio_returns", "benchmark_returns", "time_period"]
                 }
+            ),
+            Tool(
+                name=ToojaTools.CALCULATE_RETIREMENT_ACHIEVEMENT.value,
+                description="은퇴 목표 달성 여부 계산 및 110% 목표 달성 투자 방법 제시",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "current_age": {
+                            "type": "number",
+                            "description": "현재 나이"
+                        },
+                        "retirement_age": {
+                            "type": "number",
+                            "description": "목표 은퇴 나이"
+                        },
+                        "current_assets": {
+                            "type": "number",
+                            "description": "현재 투자 가능 자산 (원)"
+                        },
+                        "required_retirement_assets": {
+                            "type": "number",
+                            "description": "필요한 은퇴 자산 (원)"
+                        },
+                        "monthly_investment": {
+                            "type": "number",
+                            "description": "월 투자 가능 금액 (원, 옵션)",
+                            "default": 0
+                        }
+                    },
+                    "required": ["current_age", "retirement_age", "current_assets", "required_retirement_assets"]
+                }
             )
         ]
 
@@ -673,6 +857,15 @@ async def serve() -> None:
                         arguments['portfolio_returns'],
                         arguments['benchmark_returns'],
                         arguments['time_period']
+                    )
+
+                case ToojaTools.CALCULATE_RETIREMENT_ACHIEVEMENT.value:
+                    result = service.calculate_retirement_achievement(
+                        arguments['current_age'],
+                        arguments['retirement_age'],
+                        arguments['current_assets'],
+                        arguments['required_retirement_assets'],
+                        arguments.get('monthly_investment', 0)
                     )
 
                 case _:
