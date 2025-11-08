@@ -21,6 +21,7 @@ from pydantic import BaseModel
 sys.dont_write_bytecode = True
 class InchulTools(str, Enum):
     GENERATE_COMPREHENSIVE_PLAN = "generate_comprehensive_withdrawal_plan"
+    COMPARE_TAX_EFFICIENCY = "compare_tax_efficiency_across_accounts"
 
 
 # ========== 데이터 모델 (필요시 추가 가능) ==========
@@ -159,8 +160,8 @@ class InchulService:
                 'message': '보장소득만으로 충분합니다.'
             }
 
-        # 계좌별 잔액 추출
-        general_balance = account_balances.get('일반금융계좌', 0)
+        # 계좌별 잔액 추출 (총액만 사용)
+        general_balance = account_balances.get('일반금융계좌', account_balances.get('일반계좌', 0))
         isa_balance = account_balances.get('ISA', 0)
 
         # 연금계좌 내부 재원 구조 (법정 인출 순서)
@@ -779,6 +780,365 @@ class InchulService:
             ]
         }
 
+    def compare_tax_efficiency_across_accounts(self, investment_period_years: int,
+                                                monthly_investment: float,
+                                                asset_allocation: dict,
+                                                expected_returns: dict = None) -> dict:
+        """일반계좌 vs 절세계좌(ISA, IRP) 세금 비교 시뮬레이션
+
+        Args:
+            investment_period_years: 투자 기간 (년)
+            monthly_investment: 월 투자 금액
+            asset_allocation: 자산 배분 비율 {'주식': 40, '채권': 30, '금': 10, '리츠': 10, '현금': 10}
+            expected_returns: 자산별 예상 수익률 (선택, 기본값 사용 가능)
+
+        Returns:
+            계좌별 세금 비교 결과
+        """
+
+        # 기본 예상 수익률 (연간)
+        if expected_returns is None:
+            expected_returns = {
+                '주식': 0.08,      # 국내 주식 8%
+                '해외주식': 0.10,  # 해외 주식 10%
+                '채권': 0.04,      # 채권 4%
+                '금': 0.05,        # 금 5%
+                '리츠': 0.07,      # 리츠 7%
+                '현금': 0.02       # 현금 2%
+            }
+
+        # 총 투자금액
+        total_investment = monthly_investment * 12 * investment_period_years
+
+        # 자산별 투자액 계산
+        asset_investments = {}
+        for asset, allocation_pct in asset_allocation.items():
+            asset_investments[asset] = total_investment * (allocation_pct / 100)
+
+        # 각 계좌별 시뮬레이션
+        general_account_result = self._simulate_general_account(
+            asset_investments, expected_returns, investment_period_years, monthly_investment
+        )
+
+        isa_account_result = self._simulate_isa_account(
+            asset_investments, expected_returns, investment_period_years, monthly_investment
+        )
+
+        irp_account_result = self._simulate_irp_account(
+            asset_investments, expected_returns, investment_period_years, monthly_investment
+        )
+
+        # 절세 효과 계산
+        tax_savings_vs_general = {
+            'ISA_vs_일반계좌': {
+                '세금_절감액': round(general_account_result['total_tax'] - isa_account_result['total_tax'], 0),
+                '절감률': round((general_account_result['total_tax'] - isa_account_result['total_tax']) / general_account_result['total_tax'] * 100, 1) if general_account_result['total_tax'] > 0 else 0
+            },
+            'IRP_vs_일반계좌': {
+                '세금_절감액': round(general_account_result['total_tax'] - irp_account_result['total_tax'], 0),
+                '절감률': round((general_account_result['total_tax'] - irp_account_result['total_tax']) / general_account_result['total_tax'] * 100, 1) if general_account_result['total_tax'] > 0 else 0,
+                '세액공제_추가혜택': round(irp_account_result['tax_deduction_benefit'], 0)
+            }
+        }
+
+        return {
+            'investment_summary': {
+                '투자기간': f'{investment_period_years}년',
+                '월_투자액': round(monthly_investment, 0),
+                '총_투자원금': round(total_investment, 0),
+                '자산배분': asset_allocation
+            },
+            'account_comparison': {
+                '일반계좌': general_account_result,
+                'ISA': isa_account_result,
+                'IRP_연금저축': irp_account_result
+            },
+            'tax_savings_analysis': tax_savings_vs_general,
+            'recommendations': self._generate_tax_efficiency_recommendations(
+                tax_savings_vs_general,
+                general_account_result,
+                isa_account_result,
+                irp_account_result,
+                monthly_investment
+            )
+        }
+
+    def _simulate_general_account(self, asset_investments: dict, expected_returns: dict,
+                                   years: int, monthly_investment: float) -> dict:
+        """일반계좌 세금 시뮬레이션"""
+
+        total_value = 0
+        total_tax = 0
+        asset_details = {}
+
+        for asset, investment_amount in asset_investments.items():
+            asset_return_rate = expected_returns.get(asset, expected_returns.get('주식', 0.08))
+
+            # 월 복리 계산
+            monthly_rate = asset_return_rate / 12
+            months = years * 12
+            monthly_amount = investment_amount / months
+
+            # 미래가치 계산 (연금의 미래가치)
+            future_value = monthly_amount * (((1 + monthly_rate) ** months - 1) / monthly_rate)
+            total_return = future_value - investment_amount
+
+            # 자산별 세금 계산
+            tax = self._calculate_general_account_tax(asset, total_return, investment_amount, years)
+
+            asset_details[asset] = {
+                '투자원금': round(investment_amount, 0),
+                '최종가치': round(future_value, 0),
+                '수익': round(total_return, 0),
+                '세금': round(tax, 0),
+                '세후가치': round(future_value - tax, 0)
+            }
+
+            total_value += future_value
+            total_tax += tax
+
+        return {
+            'total_investment': round(sum(asset_investments.values()), 0),
+            'total_value_before_tax': round(total_value, 0),
+            'total_tax': round(total_tax, 0),
+            'total_value_after_tax': round(total_value - total_tax, 0),
+            'effective_tax_rate': round(total_tax / (total_value - sum(asset_investments.values())) * 100, 2) if (total_value - sum(asset_investments.values())) > 0 else 0,
+            'asset_breakdown': asset_details
+        }
+
+    def _calculate_general_account_tax(self, asset: str, total_return: float,
+                                        investment_amount: float, years: int) -> float:
+        """일반계좌 자산별 세금 계산"""
+
+        if asset == '주식':
+            # 국내 상장주식: 매매차익 비과세
+            return 0
+
+        elif asset == '해외주식':
+            # 해외주식: 양도소득세 22% (250만원 기본공제)
+            capital_gain = total_return
+            taxable_gain = max(0, capital_gain - 2500000)
+            return taxable_gain * 0.22
+
+        elif asset == '채권':
+            # 채권: 이자소득세 15.4%
+            # 매년 이자 발생하므로 연간 수익 추정
+            annual_return = total_return / years
+            annual_tax = annual_return * 0.154
+            return annual_tax * years
+
+        elif asset == '금':
+            # 금 ETF: 배당소득세 15.4%
+            # KRX 금 현물은 비과세이지만 여기서는 ETF로 가정
+            return total_return * 0.154
+
+        elif asset == '리츠':
+            # 리츠: 배당소득세 15.4%
+            return total_return * 0.154
+
+        elif asset == '현금':
+            # 현금: 이자소득세 15.4%
+            return total_return * 0.154
+
+        else:
+            # 기타: 15.4% 적용
+            return total_return * 0.154
+
+    def _simulate_isa_account(self, asset_investments: dict, expected_returns: dict,
+                               years: int, monthly_investment: float) -> dict:
+        """ISA 계좌 세금 시뮬레이션"""
+
+        total_value = 0
+        total_tax = 0
+        asset_details = {}
+
+        total_return_all_assets = 0
+
+        for asset, investment_amount in asset_investments.items():
+            asset_return_rate = expected_returns.get(asset, expected_returns.get('주식', 0.08))
+
+            # 월 복리 계산
+            monthly_rate = asset_return_rate / 12
+            months = years * 12
+            monthly_amount = investment_amount / months
+
+            future_value = monthly_amount * (((1 + monthly_rate) ** months - 1) / monthly_rate)
+            total_return = future_value - investment_amount
+            total_return_all_assets += total_return
+
+            total_value += future_value
+
+        # ISA 세금: 비과세 한도 200만원(일반형) / 400만원(서민형), 초과분 9.9%
+        # 여기서는 일반형으로 가정
+        tax_free_limit = 2000000
+        taxable_return = max(0, total_return_all_assets - tax_free_limit)
+        total_tax = taxable_return * 0.099
+
+        # 자산별 상세 (비례 배분)
+        for asset, investment_amount in asset_investments.items():
+            asset_return_rate = expected_returns.get(asset, expected_returns.get('주식', 0.08))
+
+            monthly_rate = asset_return_rate / 12
+            months = years * 12
+            monthly_amount = investment_amount / months
+
+            future_value = monthly_amount * (((1 + monthly_rate) ** months - 1) / monthly_rate)
+            total_return = future_value - investment_amount
+
+            # 세금은 전체 수익에서 비례 배분
+            asset_tax = total_tax * (total_return / total_return_all_assets) if total_return_all_assets > 0 else 0
+
+            asset_details[asset] = {
+                '투자원금': round(investment_amount, 0),
+                '최종가치': round(future_value, 0),
+                '수익': round(total_return, 0),
+                '세금': round(asset_tax, 0),
+                '세후가치': round(future_value - asset_tax, 0)
+            }
+
+        return {
+            'total_investment': round(sum(asset_investments.values()), 0),
+            'total_value_before_tax': round(total_value, 0),
+            'total_return': round(total_return_all_assets, 0),
+            'tax_free_amount': round(min(total_return_all_assets, tax_free_limit), 0),
+            'taxable_amount': round(taxable_return, 0),
+            'total_tax': round(total_tax, 0),
+            'total_value_after_tax': round(total_value - total_tax, 0),
+            'effective_tax_rate': round(total_tax / total_return_all_assets * 100, 2) if total_return_all_assets > 0 else 0,
+            'asset_breakdown': asset_details,
+            'note': 'ISA 비과세 한도 200만원(일반형) 적용, 초과분 9.9% 저율과세'
+        }
+
+    def _simulate_irp_account(self, asset_investments: dict, expected_returns: dict,
+                               years: int, monthly_investment: float) -> dict:
+        """IRP/연금저축 계좌 세금 시뮬레이션"""
+
+        total_value = 0
+        total_tax = 0
+        asset_details = {}
+
+        total_return_all_assets = 0
+
+        for asset, investment_amount in asset_investments.items():
+            asset_return_rate = expected_returns.get(asset, expected_returns.get('주식', 0.08))
+
+            # 월 복리 계산 (과세 이연으로 복리 효과 극대화)
+            monthly_rate = asset_return_rate / 12
+            months = years * 12
+            monthly_amount = investment_amount / months
+
+            future_value = monthly_amount * (((1 + monthly_rate) ** months - 1) / monthly_rate)
+            total_return = future_value - investment_amount
+            total_return_all_assets += total_return
+
+            total_value += future_value
+
+        # IRP/연금저축 세금: 나중에 인출 시 연금소득세 5.5% (평균)
+        # 현재는 과세 이연 효과만 계산
+        # 실제 인출 시 세금은 연금소득세로 부과
+        pension_tax_rate = 0.055  # 연금소득세 평균 5.5% (3.3~5.5%)
+        total_tax = total_value * pension_tax_rate
+
+        # 세액공제 혜택 계산 (연간 납입액의 13.2~16.5%)
+        annual_investment = monthly_investment * 12
+        # 최대 세액공제 대상: 연 900만원 (총급여 5,500만원 이하), 연 700만원 (초과)
+        # 여기서는 700만원 기준, 16.5% 세액공제율 적용
+        deductible_per_year = min(annual_investment, 7000000)
+        tax_deduction_benefit = deductible_per_year * 0.165 * years  # 전체 기간 세액공제
+
+        # 자산별 상세
+        for asset, investment_amount in asset_investments.items():
+            asset_return_rate = expected_returns.get(asset, expected_returns.get('주식', 0.08))
+
+            monthly_rate = asset_return_rate / 12
+            months = years * 12
+            monthly_amount = investment_amount / months
+
+            future_value = monthly_amount * (((1 + monthly_rate) ** months - 1) / monthly_rate)
+            total_return = future_value - investment_amount
+
+            # 세금은 전체 가치에서 비례 배분
+            asset_tax = total_tax * (future_value / total_value) if total_value > 0 else 0
+
+            asset_details[asset] = {
+                '투자원금': round(investment_amount, 0),
+                '최종가치': round(future_value, 0),
+                '수익': round(total_return, 0),
+                '연금소득세': round(asset_tax, 0),
+                '세후가치': round(future_value - asset_tax, 0)
+            }
+
+        return {
+            'total_investment': round(sum(asset_investments.values()), 0),
+            'total_value_before_tax': round(total_value, 0),
+            'total_return': round(total_return_all_assets, 0),
+            'pension_income_tax': round(total_tax, 0),
+            'total_value_after_tax': round(total_value - total_tax, 0),
+            'effective_tax_rate': round(total_tax / total_value * 100, 2) if total_value > 0 else 0,
+            'tax_deduction_benefit': round(tax_deduction_benefit, 0),
+            'net_benefit_after_deduction': round(total_value - total_tax + tax_deduction_benefit - sum(asset_investments.values()), 0),
+            'asset_breakdown': asset_details,
+            'note': f'과세 이연 효과로 복리 극대화. 인출 시 연금소득세 {pension_tax_rate*100}% 적용. 세액공제 {years}년간 총 {round(tax_deduction_benefit, 0):,}원'
+        }
+
+    def _generate_tax_efficiency_recommendations(self, tax_savings: dict,
+                                                  general: dict, isa: dict, irp: dict,
+                                                  monthly_investment: float) -> list:
+        """세금 효율성 권장사항 생성"""
+
+        # IRP 한도 상수 (투자메이트와 동일)
+        IRP_MONTHLY_OPTIMAL = 1_500_000  # 월 150만원
+
+        recommendations = []
+
+        # 절세 효과 분석
+        isa_savings = tax_savings['ISA_vs_일반계좌']['세금_절감액']
+        irp_savings = tax_savings['IRP_vs_일반계좌']['세금_절감액']
+        irp_deduction = tax_savings['IRP_vs_일반계좌']['세액공제_추가혜택']
+
+        recommendations.append({
+            'category': '절세 효과 요약',
+            'details': [
+                f'ISA 사용 시: 일반계좌 대비 {isa_savings:,.0f}원 절세 ({tax_savings["ISA_vs_일반계좌"]["절감률"]}%)',
+                f'IRP/연금저축 사용 시: 일반계좌 대비 {irp_savings:,.0f}원 절세 ({tax_savings["IRP_vs_일반계좌"]["절감률"]}%)',
+                f'IRP/연금저축 세액공제 추가 혜택: {irp_deduction:,.0f}원'
+            ]
+        })
+
+        # 최적 전략
+        if monthly_investment >= IRP_MONTHLY_OPTIMAL:
+            recommendations.append({
+                'category': '최적 투자 전략',
+                'details': [
+                    f'1순위: IRP/연금저축 월 150만원 (연 1,800만원 한도)',
+                    f'2순위: ISA 월 {monthly_investment - IRP_MONTHLY_OPTIMAL:,.0f}원 (총 1억원 한도)',
+                    f'3순위: 일반계좌 (한도 초과분)',
+                    f'💡 세금이 많은 자산(해외주식, 채권, 리츠)을 절세 계좌에 우선 배치하세요'
+                ]
+            })
+        else:
+            recommendations.append({
+                'category': '최적 투자 전략',
+                'details': [
+                    f'1순위: IRP/연금저축 월 {monthly_investment:,.0f}원 전액 투자',
+                    f'💡 IRP 한도(월 150만원)를 최대한 활용하면 절세 효과가 더 큽니다',
+                    f'⚠️ 현재 투자액이 IRP 최적 금액보다 적습니다'
+                ]
+            })
+
+        # 자산 배치 전략
+        recommendations.append({
+            'category': '자산별 계좌 배치 가이드',
+            'details': [
+                '✅ IRP/연금저축: 해외주식 ETF, 채권, 리츠 (세금 많은 자산)',
+                '✅ ISA: 고배당주, 채권, 금 ETF',
+                '✅ 일반계좌: 국내 상장주식, KRX 금 현물 (세금 없거나 적은 자산)',
+                '❌ 절대 주의: 국내 상장주식을 IRP에 넣으면 비과세 혜택 상실!'
+            ]
+        })
+
+        return recommendations
+
 
 # ========== MCP Server 설정 ==========
 
@@ -802,7 +1162,23 @@ async def serve() -> None:
                         },
                         "asset_allocation": {
                             "type": "object",
-                            "description": "은퇴시점의 자산 분배 현황 (일반금융계좌, ISA, 연금계좌_상세, 부동산자산 등)"
+                            "description": """은퇴시점의 자산 분배 현황 (총액 기준)
+
+필수 형식:
+{
+  "일반금융계좌": 27000000,  // 또는 "일반계좌"
+  "ISA": 82000000,
+  "연금계좌_상세": {
+    "비과세재원": 0,
+    "이연퇴직소득": 0,
+    "과세재원": 429000000
+  }
+}
+
+주의사항:
+- 일반금융계좌와 ISA는 총액(숫자)만 입력
+- 연금계좌는 반드시 '연금계좌_상세' 키를 사용하여 비과세/과세 구분
+- 세부 자산 배분(주식, 채권 등)은 지원하지 않음"""
                         },
                         "monthly_expenses": {
                             "type": "number",
@@ -835,6 +1211,32 @@ async def serve() -> None:
                     },
                     "required": ["total_assets", "asset_allocation", "monthly_expenses", "monthly_pension", "retirement_age", "retirement_years"]
                 }
+            ),
+            Tool(
+                name=InchulTools.COMPARE_TAX_EFFICIENCY.value,
+                description="일반계좌 vs 절세계좌(ISA, IRP/연금저축) 세금 비교 시뮬레이션 - 투자 기간 동안 발생하는 세금 차이와 절세 효과 계산",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "investment_period_years": {
+                            "type": "number",
+                            "description": "투자 기간 (년)"
+                        },
+                        "monthly_investment": {
+                            "type": "number",
+                            "description": "월 투자 금액 (원)"
+                        },
+                        "asset_allocation": {
+                            "type": "object",
+                            "description": "자산 배분 비율 (퍼센트). 예: {'주식': 40, '채권': 30, '금': 10, '리츠': 10, '현금': 10}. 합계가 100이 되어야 함."
+                        },
+                        "expected_returns": {
+                            "type": "object",
+                            "description": "자산별 예상 수익률 (소수). 선택사항, 기본값: 주식 8%, 해외주식 10%, 채권 4%, 금 5%, 리츠 7%, 현금 2%. 예: {'주식': 0.08, '채권': 0.04}"
+                        }
+                    },
+                    "required": ["investment_period_years", "monthly_investment", "asset_allocation"]
+                }
             )
         ]
 
@@ -856,6 +1258,14 @@ async def serve() -> None:
                         arguments.get('bridge_years', 0),
                         arguments.get('inflation_rate', 0.02),
                         arguments.get('other_comprehensive_income', 0)
+                    )
+
+                case InchulTools.COMPARE_TAX_EFFICIENCY.value:
+                    result = service.compare_tax_efficiency_across_accounts(
+                        arguments['investment_period_years'],
+                        arguments['monthly_investment'],
+                        arguments['asset_allocation'],
+                        arguments.get('expected_returns', None)
                     )
 
                 case _:
