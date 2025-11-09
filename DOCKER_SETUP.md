@@ -310,7 +310,7 @@ docker run --rm -it -e MCP_SERVER=inchul retirement-mcp
 
 ### 이미지 빌드 실패
 - `requirements.txt`에 모든 의존성이 올바르게 나열되어 있는지 확인
-- Python 3.10 호환성 확인
+- Python 3.11 호환성 확인 (Dockerfile에서 Python 3.11 사용)
 - Docker가 실행 중인지 확인
 
 ### 실행 시 에러

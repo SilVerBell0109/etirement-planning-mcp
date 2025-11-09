@@ -1,5 +1,5 @@
-# 1. Python 3.10 베이스 이미지
-FROM python:3.10-slim
+# 1. Python 3.11 베이스 이미지
+FROM python:3.11-slim
 
 # 2. 작업 디렉토리
 WORKDIR /app
