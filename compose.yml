@@ -1,0 +1,47 @@
+services:
+  # jeoklip MCP 서버
+  jeoklip:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: retirement-mcp:latest
+    container_name: retirement-mcp-jeoklip
+    environment:
+      - MCP_SERVER=jeoklip
+    stdin_open: true  # -i 플래그와 동일 (MCP stdio 통신용)
+    tty: false        # MCP는 tty가 필요 없음
+    restart: "no"     # MCP 서버는 일회성 실행
+    # volumes:
+    #   - ./mcp_server_jeoklip:/app/mcp_server_jeoklip  # 개발 시 코드 마운트 (선택사항)
+
+  # tooja MCP 서버
+  tooja:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: retirement-mcp:latest
+    container_name: retirement-mcp-tooja
+    environment:
+      - MCP_SERVER=tooja
+    stdin_open: true
+    tty: false
+    restart: "no"
+
+  # inchul MCP 서버
+  inchul:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: retirement-mcp:latest
+    container_name: retirement-mcp-inchul
+    environment:
+      - MCP_SERVER=inchul
+    stdin_open: true
+    tty: false
+    restart: "no"
+
+# 네트워크 설정 (필요한 경우)
+networks:
+  default:
+    name: retirement-mcp-network
+
