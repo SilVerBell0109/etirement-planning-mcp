@@ -1,18 +1,25 @@
-# 1. Python 3.10 베이스 이미지
-FROM python:3.10-slim
+# Dockerfile
+FROM python:3.11-slim
 
-# 2. 작업 디렉토리
+# 작업 디렉토리 설정
 WORKDIR /app
 
-# 3. requirements 먼저 복사 후 설치
+# 시스템 패키지 업데이트
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python 의존성 파일 복사
 COPY requirements.txt .
+
+# Python 패키지 설치
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 4. 나머지 소스 코드 복사
+# 프로젝트 파일 복사
 COPY . .
 
-# 5. entrypoint 스크립트 실행 권한 부여
-RUN chmod +x ./entrypoint.sh
+# 환경변수 설정
+ENV PYTHONUNBUFFERED=1
 
-ENTRYPOINT ["./entrypoint.sh"]
-
+# 기본 명령어 (서버별로 변경 가능)
+CMD ["python", "-m", "mcp_server_jeoklip"]

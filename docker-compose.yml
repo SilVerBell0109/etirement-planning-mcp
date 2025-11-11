@@ -1,0 +1,33 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  jeoklip:
+    build: .
+    container_name: mcp-jeoklip
+    command: python -m mcp_server_jeoklip
+    volumes:
+      - ./config:/app/config:ro
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  tooja:
+    build: .
+    container_name: mcp-tooja
+    command: python -m mcp_server_tooja
+    volumes:
+      - ./config:/app/config:ro
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  inchul:
+    build: .
+    container_name: mcp-inchul
+    command: python -m mcp_server_inchul
+    volumes:
+      - ./config:/app/config:ro
+    stdin_open: true
+    tty: true
+    restart: unless-stopped

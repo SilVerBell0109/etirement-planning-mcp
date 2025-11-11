@@ -1,33 +1,46 @@
 {
   "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/silverbell/Desktop",
+        "/Users/silverbell/Documents",
+        "/Users/silverbell/Downloads"
+      ]
+    },
     "jeoklip": {
       "command": "docker",
       "args": [
-        "run",
-        "--rm",
+        "exec",
         "-i",
-        "-e", "MCP_SERVER=jeoklip",
-        "retirement-mcp"
+        "mcp-jeoklip",
+        "python",
+        "-m",
+        "mcp_server_jeoklip"
       ]
     },
     "tooja": {
       "command": "docker",
       "args": [
-        "run",
-        "--rm",
+        "exec",
         "-i",
-        "-e", "MCP_SERVER=tooja",
-        "retirement-mcp"
+        "mcp-tooja",
+        "python",
+        "-m",
+        "mcp_server_tooja"
       ]
     },
     "inchul": {
       "command": "docker",
       "args": [
-        "run",
-        "--rm",
+        "exec",
         "-i",
-        "-e", "MCP_SERVER=inchul",
-        "retirement-mcp"
+        "mcp-inchul",
+        "python",
+        "-m",
+        "mcp_server_inchul"
       ]
     }
   }
