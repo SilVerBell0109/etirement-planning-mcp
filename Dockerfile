@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 # Dockerfile
-=======
-# 1. Python 3.11 베이스 이미지
->>>>>>> c0c1d9d183f6ff0072c48033e74b9d1ff2ba4d27
 FROM python:3.11-slim
 
 # 작업 디렉토리 설정
