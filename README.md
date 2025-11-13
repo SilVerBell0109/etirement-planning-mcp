@@ -898,12 +898,4 @@ Ex: 위의 분석 결과를 PDF로 만들어주세요.
 - 주소정
 - 최종은
 
----
-
-## 📞 문의
-
-- **GitHub Issues**: [프로젝트 이슈](https://github.com/SilVerBell0109/etirement-planning-mcp/issues)
-- **Email**: alex.choi@daum.net
-
-
 </div>
