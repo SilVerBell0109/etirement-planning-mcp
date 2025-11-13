@@ -1,6 +1,9 @@
 # Dockerfile
 FROM python:3.11-slim
 
+# 빌드 시 서버 지정 (기본값: jeoklip)
+ARG SERVER=jeoklip
+
 # 작업 디렉토리 설정
 WORKDIR /app
 
@@ -20,6 +23,7 @@ COPY . .
 
 # 환경변수 설정
 ENV PYTHONUNBUFFERED=1
+ENV MCP_SERVER=${SERVER}
 
-# 기본 명령어 (서버별로 변경 가능)
-CMD ["python", "-m", "mcp_server_jeoklip"]
+# 실행할 서버 모듈 지정
+CMD python -m mcp_server_${MCP_SERVER}
