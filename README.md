@@ -188,7 +188,6 @@ notepad claude_desktop_config.json
 
 1. Claude Desktop 완전 종료
 2. Claude Desktop 재실행
-3. 하단에 🔧 아이콘 3개 확인
 
 ---
 
@@ -243,15 +242,156 @@ open -a Claude
 #### Step 1: Docker 설치
 
 ```bash
+# 시스템 업데이트
 sudo apt update
+sudo apt upgrade -y
+
+# Docker 설치
 sudo apt install -y docker.io docker-compose
+
+# Docker 서비스 시작 및 자동 시작 설정
+sudo systemctl start docker
+sudo systemctl enable docker
+
+# 현재 사용자를 docker 그룹에 추가 (sudo 없이 docker 사용)
 sudo usermod -aG docker $USER
+
+# 그룹 변경 적용 (재로그인 대신)
 newgrp docker
 ```
 
-#### Step 2-4: macOS와 동일
+**확인:**
+```bash
+docker --version
+docker compose version
+docker ps
+```
 
-설정 파일 위치: `~/.config/Claude/claude_desktop_config.json`
+**⚠️ 참고:** `docker ps` 실행 시 권한 오류가 발생하면 로그아웃 후 재로그인하세요.
+
+#### Step 2: Docker 이미지 다운로드 (선택사항)
+
+```bash
+# Claude Desktop 설정 시 자동으로 다운로드되지만,
+# 사전에 다운로드하려면 아래 명령어를 실행하세요:
+docker pull silverbell0109/jeoklip_server:1.0.0
+docker pull silverbell0109/tooja_server:1.0.0
+docker pull silverbell0109/inchul_server:1.0.0
+```
+
+⏱️ 첫 다운로드는 2-3분 소요됩니다.
+
+#### Step 3: Claude Desktop 설치 (Linux용)
+
+**방법 1: Snap을 통한 설치 (권장)**
+
+```bash
+# Snap이 없는 경우 설치
+sudo apt install -y snapd
+
+# Claude Desktop 설치
+sudo snap install claude-desktop
+```
+
+**방법 2: AppImage 다운로드**
+
+1. [Claude Desktop for Linux](https://claude.ai/download) 다운로드
+2. AppImage 파일에 실행 권한 부여:
+```bash
+chmod +x Claude-*.AppImage
+./Claude-*.AppImage
+```
+
+#### Step 4: Claude Desktop 연동
+
+```bash
+# 설정 디렉토리 생성
+mkdir -p ~/.config/Claude
+
+# 설정 파일 생성/편집
+nano ~/.config/Claude/claude_desktop_config.json
+```
+
+**claude_desktop_config.json 내용:**
+```json
+{
+  "mcpServers": {
+    "jeoklip": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "silverbell0109/jeoklip_server:1.0.0"
+      ]
+    },
+    "tooja": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "silverbell0109/tooja_server:1.0.0"
+      ]
+    },
+    "inchul": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "silverbell0109/inchul_server:1.0.0"
+      ]
+    }
+  }
+}
+```
+
+저장: `Ctrl + O` → `Enter` → `Ctrl + X`
+
+#### Step 5: Claude Desktop 재시작
+
+```bash
+# Snap으로 설치한 경우
+snap restart claude-desktop
+
+# 또는 프로세스 종료 후 재실행
+pkill -f claude
+sleep 2
+claude-desktop &  # 또는 GUI에서 실행
+```
+
+#### 🔧 Ubuntu 전용 문제 해결
+
+**Docker 권한 오류**
+```bash
+# 현재 사용자의 그룹 확인
+groups
+
+# docker 그룹이 없다면 재로그인
+# 또는 다음 명령어로 임시 적용:
+sudo chmod 666 /var/run/docker.sock
+```
+
+**Claude Desktop이 Docker를 찾지 못할 때**
+```bash
+# Docker 경로 확인
+which docker
+# 결과: /usr/bin/docker
+
+# 필요시 설정 파일에서 전체 경로 사용:
+"command": "/usr/bin/docker"
+```
+
+**AppImage 실행 오류**
+```bash
+# FUSE 라이브러리 설치
+sudo apt install -y libfuse2
+
+# 또는 AppImage 압축 해제 실행
+./Claude-*.AppImage --appimage-extract
+./squashfs-root/AppRun
+```
 
 ---
 
@@ -288,7 +428,15 @@ docker images | grep silverbell0109
 - 현재 나이: __세
 - 월 소득: __만원
 - 현재 자산: __만원
+   -주식: __만원
+   -현금: __만원
+   -채권: __만원
+   .
+   .
+- 월 수익: __만원
+- 월 지출: __만원
 - 월 저축액: __만원
+- 기대 연금 일시불 수령액: __만원
 
 은퇴 목표:
 - 은퇴 희망 나이: __세
@@ -309,20 +457,6 @@ docker images | grep silverbell0109
 
 필요한 은퇴 자금과 저축 계획을 세워주세요.
 ```
-
-**예상 결과:**
-```
-📊 은퇴 설계 분석
-
-1. 필요 은퇴자본: 약 12억원
-2. 현재 계획으로 모을 수 있는 금액: 약 10억원
-3. 부족액: 약 2억원
-
-권장 저축 계획:
-- 방법 1: 월 저축 180만원 (30만원 증액)
-- 방법 2: 은퇴 연령 62세로 조정
-```
-
 ---
 
 ### 2️⃣ 투자메이트 사용법
@@ -333,12 +467,17 @@ docker images | grep silverbell0109
 투자 정보:
 - 나이: __세
 - 투자 가능 금액: __만원
-- 월 추가 투자: __만원
+- 현재 투자 가능 금액: __만원
 - 투자 기간: __년
+- 현재 자산:
+  - 현재 자산: __만원
+   -주식: __만원
+   -현금: __만원
+   -채권: __만원
+   .
+   .
+- 절세계좌 현황: ...
 
-투자 성향:
-- 투자 경험: [초보/중급/고급]
-- 리스크 성향: [보수적/중립적/공격적]
 
 포트폴리오를 추천하고 절세 전략도 알려주세요.
 ```
@@ -353,25 +492,6 @@ docker images | grep silverbell0109
 
 보수형, 중립형, 공격형 포트폴리오를 추천해주세요.
 ```
-
-**예상 결과:**
-```
-📊 포트폴리오 추천
-
-중립형 (추천):
-- 주식: 40%
-- 채권: 40%
-- 금/리츠: 20%
-- 예상 수익률: 6-7%
-- 15년 후: 약 4.5억원
-
-절세 전략:
-- IRP: 월 75만원 (세액공제 16.5%)
-- 연금저축: 월 50만원
-- ISA: 월 50만원
-- 연간 절세: 약 277만원
-```
-
 ---
 
 ### 3️⃣ 인출메이트 사용법
@@ -390,8 +510,26 @@ docker images | grep silverbell0109
 
 보유 자산:
 - 일반 계좌: __만원
+  - 현재 자산: __만원
+   -주식: __만원
+   -현금: __만원
+   -채권: __만원
+   .
+   .
 - ISA: __만원
+- 현재 자산: __만원
+   -주식: __만원
+   -현금: __만원
+   -채권: __만원
+   .
+   .
 - 연금계좌: __만원
+- 현재 자산: __만원
+   -주식: __만원
+   -현금: __만원
+   -채권: __만원
+   .
+   .
 
 절세 인출 전략을 알려주세요.
 ```
@@ -413,64 +551,7 @@ docker images | grep silverbell0109
 절세 인출 전략을 알려주세요.
 ```
 
-**예상 결과:**
-```
-📋 인출 전략
 
-브릿지 기간 (60-65세):
-- 일반계좌 우선 인출
-- ISA 비과세 활용
-- 예상 세금: 약 300만원
-
-국민연금 수령 후 (65-90세):
-- 연금계좌 분산 인출
-- 절세 효과: 약 1,000만원
-
-3버킷 전략으로 안정적 자산 관리
-```
-
----
-
-## 🎬 실전 시나리오
-
-### 시나리오 A: 완전 초보 (20-30대)
-
-```
-30세, 월 소득 400만원, 저축 1천만원입니다.
-60세 은퇴 목표입니다.
-
-1. 얼마를 모아야 하나요?
-2. 매달 얼마를 저축해야 하나요?
-3. 어떻게 투자해야 하나요?
-4. 은퇴 후 어떻게 인출해야 하나요?
-```
-
-### 시나리오 B: 중급자 (40-50대)
-
-```
-50세, 월 소득 800만원, 현재 자산 4억원입니다.
-월 300만원 저축 중, IRP/ISA 보유 중입니다.
-
-1. 10년 후 예상 자산은?
-2. 은퇴 목표 (월 400만원) 달성 가능?
-3. 포트폴리오 조정 필요?
-```
-
-### 시나리오 C: 은퇴 직전 (55-60대)
-
-```
-59세, 1년 후 은퇴 예정입니다.
-총 자산 10억원 (일반 3억, ISA 1억, 연금 6억)
-예상 국민연금 월 180만원 (65세부터)
-목표 생활비 월 350만원
-
-1. 자산 배분 조정 필요?
-2. 브릿지 기간 전략은?
-3. 계좌별 인출 순서는?
-4. 30년 자산 유지 가능?
-```
-
----
 
 ## 🔍 문제 해결
 
@@ -486,7 +567,7 @@ docker pull silverbell0109/inchul_server:1.0.0
 docker images | grep silverbell0109
 ```
 
-### ❌ Claude에서 도구가 안 보여요
+### ❌ Claude에서 도구를 사용할 수 없어요
 
 1. Docker Desktop 실행 중인가요?
 2. 이미지가 빌드되었나요?
@@ -506,36 +587,23 @@ docker images | grep silverbell0109
 
 ### Q1. 여러 도구를 동시에 사용 가능?
 
-**A:** 네! Claude가 자동으로 선택합니다.
+**A:** 네! Claude가 자동으로 선택합니다. 다만, 요청할 때 "00도구를 사용해줘." 라고 구체적으로 요청하면 더 자세한 결과가 나옵니다.
 
 ### Q2. 결과를 파일로 저장 가능?
 
-**A:** 네! Claude에게 요청하세요.
+**A:** 네! Claude에게 직접 요청하면 가능합니다.
 ```
-위의 분석 결과를 PDF로 만들어주세요.
+Ex: 위의 분석 결과를 PDF로 만들어주세요.
 ```
 
 ### Q3. 계산이 정확한가요?
 
-**A:** 금융 공식 기반:
-- 안전인출률: 3.5%
-- 인플레이션: 2%
-- 기대수익률: 5-9%
+**A:** 대한민국 2025년 기준으로 한 중앙 설정 모듈을 이용하여 비교적 정확한 계산이 가능합니다.
 
 ### Q4. 개인정보가 저장되나요?
 
-**A:** 아니요!
-- 로컬에서만 실행
-- 외부 전송 없음
-- 컨테이너 종료 시 삭제
+**A:** 아니요! 로컬에서만 실행되며 외부로 따로 전송하지 않습니다. 또한 컨테이너 종료 시 자동으로 삭제됩니다.
 
-### Q5. 실제 투자에 사용 가능?
-
-**A:** ⚠️ 교육 및 참고용입니다.
-- 실제 투자 전 전문가 상담 필수
-- 계산은 예측이며 보장되지 않음
-
----
 
 ## 📊 기술 스택
 
@@ -547,25 +615,6 @@ docker images | grep silverbell0109
 | **라이브러리** | mcp, pydantic, numpy |
 
 ---
-
-## 🤝 기여
-
-기여는 언제나 환영합니다!
-
-1. Fork the Project
-2. Create Feature Branch
-3. Commit Changes
-4. Push to Branch
-5. Open Pull Request
-
----
-
-## 📝 라이선스
-
-MIT 라이선스 - 자세한 내용은 [LICENSE](LICENSE) 참조
-
----
-
 ## 👥 개발팀
 
 **국민대학교 - Koscom AI Agent Challenge 2025**
@@ -582,31 +631,5 @@ MIT 라이선스 - 자세한 내용은 [LICENSE](LICENSE) 참조
 - **GitHub Issues**: [프로젝트 이슈](https://github.com/SilVerBell0109/etirement-planning-mcp/issues)
 - **Email**: alex.choi@daum.net
 
----
-
-## 🙏 감사의 말
-
-- **Anthropic** - Claude 및 MCP
-- **Koscom** - AI Agent Challenge
-- **오픈소스 커뮤니티**
-
----
-
-## ⚠️ 면책 조항
-
-이 소프트웨어는 **교육 목적**으로만 제공됩니다.
-
-- 실제 투자 결정 전 전문가 상담 필수
-- 제공 계산은 참고용이며 보장되지 않음
-- 개인 상황에 따라 결과 상이
-- 개발자는 손실에 대해 책임지지 않음
-
----
-
-<div align="center">
-
-### ⭐ Star를 눌러주세요!
-
-**Made with ❤️ for a better retirement planning**
 
 </div>
