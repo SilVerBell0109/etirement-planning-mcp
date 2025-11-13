@@ -95,17 +95,17 @@
 | **Docker Compose** | v2.0+ | `docker compose version` |
 | **Claude Desktop** | 최신 버전 | [다운로드](https://claude.ai/download) |
 
-### ⚡ 3단계로 시작하기
+### ⚡ 2단계로 시작하기
 
 ```bash
-# 1️⃣ 저장소 클론
-git clone https://github.com/SilVerBell0109/etirement-planning-mcp.git
-cd etirement-planning-mcp
+# 1️⃣ Docker 이미지 다운로드 (자동)
+# Claude Desktop 설정 시 자동으로 이미지가 다운로드됩니다.
+# 또는 사전에 수동으로 다운로드할 수 있습니다:
+docker pull silverbell0109/jeoklip_server:1.0.0
+docker pull silverbell0109/tooja_server:1.0.0
+docker pull silverbell0109/inchul_server:1.0.0
 
-# 2️⃣ Docker 이미지 빌드
-docker compose build
-
-# 3️⃣ Claude Desktop 설정 (아래 섹션 참고)
+# 2️⃣ Claude Desktop 설정 (아래 섹션 참고)
 ```
 
 ---
@@ -127,23 +127,19 @@ docker --version
 docker compose version
 ```
 
-#### Step 2: 프로젝트 다운로드
+#### Step 2: Docker 이미지 다운로드 (선택사항)
 
 ```powershell
-cd C:\Users\YourName\Documents
-git clone https://github.com/SilVerBell0109/etirement-planning-mcp.git
-cd etirement-planning-mcp
+# Claude Desktop 설정 시 자동으로 다운로드되지만,
+# 사전에 다운로드하려면 아래 명령어를 실행하세요:
+docker pull silverbell0109/jeoklip_server:1.0.0
+docker pull silverbell0109/tooja_server:1.0.0
+docker pull silverbell0109/inchul_server:1.0.0
 ```
 
-#### Step 3: Docker 이미지 빌드
+⏱️ 첫 다운로드는 2-3분 소요됩니다.
 
-```powershell
-docker compose build
-```
-
-⏱️ 첫 빌드는 3-5분 소요됩니다.
-
-#### Step 4: Claude Desktop 연동
+#### Step 3: Claude Desktop 연동
 
 ```powershell
 # 설정 파일 위치로 이동
@@ -163,9 +159,7 @@ notepad claude_desktop_config.json
         "run",
         "--rm",
         "-i",
-        "-e",
-        "MCP_SERVER=jeoklip",
-        "retirement-mcp:latest"
+        "silverbell0109/jeoklip_server:1.0.0"
       ]
     },
     "tooja": {
@@ -174,9 +168,7 @@ notepad claude_desktop_config.json
         "run",
         "--rm",
         "-i",
-        "-e",
-        "MCP_SERVER=tooja",
-        "retirement-mcp:latest"
+        "silverbell0109/tooja_server:1.0.0"
       ]
     },
     "inchul": {
@@ -185,16 +177,14 @@ notepad claude_desktop_config.json
         "run",
         "--rm",
         "-i",
-        "-e",
-        "MCP_SERVER=inchul",
-        "retirement-mcp:latest"
+        "silverbell0109/inchul_server:1.0.0"
       ]
     }
   }
 }
 ```
 
-#### Step 5: Claude Desktop 재시작
+#### Step 4: Claude Desktop 재시작
 
 1. Claude Desktop 완전 종료
 2. Claude Desktop 재실행
@@ -216,21 +206,17 @@ docker --version
 docker compose version
 ```
 
-#### Step 2: 프로젝트 다운로드
+#### Step 2: Docker 이미지 다운로드 (선택사항)
 
 ```bash
-cd ~/Desktop
-git clone https://github.com/SilVerBell0109/etirement-planning-mcp.git
-cd etirement-planning-mcp
+# Claude Desktop 설정 시 자동으로 다운로드되지만,
+# 사전에 다운로드하려면 아래 명령어를 실행하세요:
+docker pull silverbell0109/jeoklip_server:1.0.0
+docker pull silverbell0109/tooja_server:1.0.0
+docker pull silverbell0109/inchul_server:1.0.0
 ```
 
-#### Step 3: Docker 이미지 빌드
-
-```bash
-docker compose build
-```
-
-#### Step 4: Claude Desktop 연동
+#### Step 3: Claude Desktop 연동
 
 ```bash
 # 설정 파일 생성
@@ -242,7 +228,7 @@ nano ~/Library/Application\ Support/Claude/claude_desktop_config.json
 
 저장: `Ctrl + O` → `Enter` → `Ctrl + X`
 
-#### Step 5: Claude Desktop 재시작
+#### Step 4: Claude Desktop 재시작
 
 ```bash
 osascript -e 'quit app "Claude"'
@@ -263,7 +249,7 @@ sudo usermod -aG docker $USER
 newgrp docker
 ```
 
-#### Step 2-5: macOS와 동일
+#### Step 2-4: macOS와 동일
 
 설정 파일 위치: `~/.config/Claude/claude_desktop_config.json`
 
@@ -275,7 +261,7 @@ newgrp docker
 
 1. **Docker 이미지 확인**
 ```bash
-docker images | grep retirement-mcp
+docker images | grep silverbell0109
 ```
 
 2. **Claude Desktop에서 도구 확인**
@@ -491,9 +477,13 @@ docker images | grep retirement-mcp
 ### ❌ Docker 이미지가 없어요
 
 ```bash
-cd /path/to/etirement-planning-mcp
-docker compose build
-docker images | grep retirement-mcp
+# Docker Hub에서 이미지 다운로드
+docker pull silverbell0109/jeoklip_server:1.0.0
+docker pull silverbell0109/tooja_server:1.0.0
+docker pull silverbell0109/inchul_server:1.0.0
+
+# 이미지 확인
+docker images | grep silverbell0109
 ```
 
 ### ❌ Claude에서 도구가 안 보여요
