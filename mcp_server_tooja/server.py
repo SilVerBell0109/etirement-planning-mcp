@@ -528,8 +528,18 @@ class ToojaService:
 
     def calculate_retirement_achievement(self, current_age: int, retirement_age: int,
                                         current_assets: float, required_retirement_assets: float,
-                                        monthly_investment: float = 0) -> dict:
-        """은퇴 목표 달성 여부 및 투자 전략 계산"""
+                                        monthly_investment: float = 0,
+                                        scenario_type: str = 'baseline') -> dict:
+        """은퇴 목표 달성 여부 및 투자 전략 계산 (인플레이션 반영)
+
+        Args:
+            current_age: 현재 나이
+            retirement_age: 목표 은퇴 나이
+            current_assets: 현재 투자 가능 자산
+            required_retirement_assets: 필요한 은퇴 자산
+            monthly_investment: 월 투자 가능 금액 (기본값: 0)
+            scenario_type: 경제 시나리오 ('pessimistic', 'baseline', 'optimistic') (기본값: 'baseline')
+        """
 
         years_to_retirement = retirement_age - current_age
 
@@ -541,22 +551,33 @@ class ToojaService:
         # 목표: 필요 은퇴자산의 110%
         target_assets = required_retirement_assets * 1.1
 
-        # 위험성향에 따른 예상 수익률 (연간)
-        expected_returns = {
-            'conservative': 0.045,  # 4.5%
-            'moderate': 0.06,       # 6.0%
-            'aggressive': 0.075     # 7.5%
+        # 인플레이션율 가져오기 (중앙설정모듈 사용)
+        inflation_rate = KOR_2025.ECON.__dict__[scenario_type]['inflation_rate']
+
+        # 위험성향에 따른 명목 수익률 (연간) - 중앙설정모듈 사용
+        nominal_returns = {
+            'conservative': KOR_2025.RISK_ALLOC.allocations['conservative']['expected_return'],
+            'moderate': KOR_2025.RISK_ALLOC.allocations['moderate']['expected_return'],
+            'aggressive': KOR_2025.RISK_ALLOC.allocations['aggressive']['expected_return']
+        }
+
+        # 실질 수익률 계산 (명목 수익률 - 인플레이션)
+        real_returns = {
+            risk_level: nominal_return - inflation_rate
+            for risk_level, nominal_return in nominal_returns.items()
         }
 
         # 각 시나리오별로 미래 자산 계산
         scenarios = {}
-        for risk_level, annual_return in expected_returns.items():
-            # 현재 자산의 미래 가치 계산
-            future_value_current = current_assets * ((1 + annual_return) ** years_to_retirement)
+        for risk_level, real_return in real_returns.items():
+            nominal_return = nominal_returns[risk_level]
 
-            # 월 투자금의 미래 가치 계산 (연금의 미래가치 공식)
+            # 현재 자산의 미래 가치 계산 (명목 수익률 사용)
+            future_value_current = current_assets * ((1 + nominal_return) ** years_to_retirement)
+
+            # 월 투자금의 미래 가치 계산 (연금의 미래가치 공식, 명목 수익률 사용)
             if monthly_investment > 0:
-                monthly_rate = annual_return / 12
+                monthly_rate = nominal_return / 12
                 months = years_to_retirement * 12
                 future_value_monthly = monthly_investment * (((1 + monthly_rate) ** months - 1) / monthly_rate)
             else:
@@ -564,16 +585,26 @@ class ToojaService:
 
             total_future_value = future_value_current + future_value_monthly
 
-            # 목표 달성률 계산
+            # 인플레이션을 고려한 실질 구매력 계산
+            real_purchasing_power = total_future_value / ((1 + inflation_rate) ** years_to_retirement)
+
+            # 목표 달성률 계산 (명목 가치 기준)
             achievement_rate = (total_future_value / target_assets) * 100
 
+            # 실질 구매력 기준 목표 달성률
+            real_achievement_rate = (real_purchasing_power / required_retirement_assets) * 100
+
             scenarios[risk_level] = {
-                'expected_annual_return': round(annual_return * 100, 1),
+                'nominal_annual_return': round(nominal_return * 100, 1),
+                'real_annual_return': round(real_return * 100, 1),
+                'inflation_rate': round(inflation_rate * 100, 1),
                 'future_value_current_assets': round(future_value_current),
                 'future_value_monthly_investment': round(future_value_monthly),
-                'total_expected_assets': round(total_future_value),
+                'total_expected_assets_nominal': round(total_future_value),
+                'total_expected_assets_real': round(real_purchasing_power),
                 'target_assets': round(target_assets),
-                'achievement_rate': round(achievement_rate, 1),
+                'achievement_rate_nominal': round(achievement_rate, 1),
+                'achievement_rate_real': round(real_achievement_rate, 1),
                 'achieves_110_target': achievement_rate >= 100
             }
 
@@ -587,7 +618,7 @@ class ToojaService:
         # 목표 달성을 위해 필요한 추가 월 투자액 계산 (moderate 기준)
         required_additional_monthly = 0
         if not scenarios['moderate']['achieves_110_target']:
-            moderate_return = expected_returns['moderate']
+            moderate_return = nominal_returns['moderate']
             monthly_rate = moderate_return / 12
             months = years_to_retirement * 12
             future_value_current = current_assets * ((1 + moderate_return) ** years_to_retirement)
@@ -607,7 +638,9 @@ class ToojaService:
                 'current_assets': current_assets,
                 'monthly_investment': monthly_investment,
                 'required_retirement_assets': required_retirement_assets,
-                'target_assets_110': round(target_assets)
+                'target_assets_110': round(target_assets),
+                'economic_scenario': scenario_type,
+                'inflation_rate': round(inflation_rate * 100, 1)
             },
             'scenarios': scenarios,
             'recommendation': {
@@ -619,7 +652,8 @@ class ToojaService:
                     retirement_age,
                     current_assets,
                     target_assets,
-                    required_additional_monthly
+                    required_additional_monthly,
+                    inflation_rate
                 )
             }
         }
@@ -627,8 +661,9 @@ class ToojaService:
     def _generate_achievement_message(self, scenarios: dict, recommended_strategy: str,
                                      current_age: int, retirement_age: int,
                                      current_assets: float, target_assets: float,
-                                     required_additional_monthly: float) -> str:
-        """목표 달성 메시지 생성"""
+                                     required_additional_monthly: float,
+                                     inflation_rate: float) -> str:
+        """목표 달성 메시지 생성 (인플레이션 반영)"""
 
         if recommended_strategy:
             scenario = scenarios[recommended_strategy]
@@ -639,14 +674,18 @@ class ToojaService:
 
 현재 투자자산: {current_assets:,.0f}원
 
-{retirement_age}세 예상 자산: {scenario['total_expected_assets']:,.0f}원
+{retirement_age}세 예상 자산 (명목): {scenario['total_expected_assets_nominal']:,.0f}원
+{retirement_age}세 예상 자산 (실질): {scenario['total_expected_assets_real']:,.0f}원
 
 필요 은퇴자산: {target_assets:,.0f}원 (목표 대비 110%)
 
 결론: 목표 대비 110% 달성 예정!
 
-권장 전략: {recommended_strategy.title()}형 포트폴리오 (연 {scenario['expected_annual_return']}% 수익률)
-- 목표 달성률: {scenario['achievement_rate']}%
+권장 전략: {recommended_strategy.title()}형 포트폴리오
+- 명목 수익률: {scenario['nominal_annual_return']}% (인플레이션 {scenario['inflation_rate']}% 반영)
+- 실질 수익률: {scenario['real_annual_return']}%
+- 명목 달성률: {scenario['achievement_rate_nominal']}%
+- 실질 달성률: {scenario['achievement_rate_real']}%
 """
         else:
             # 모든 시나리오가 목표 미달성
@@ -664,16 +703,20 @@ class ToojaService:
 
 현재 투자자산: {current_assets:,.0f}원
 
-{retirement_age}세 예상 자산 (Aggressive): {aggressive['total_expected_assets']:,.0f}원
+{retirement_age}세 예상 자산 (Aggressive, 명목): {aggressive['total_expected_assets_nominal']:,.0f}원
+{retirement_age}세 예상 자산 (Aggressive, 실질): {aggressive['total_expected_assets_real']:,.0f}원
 
 필요 은퇴자산: {target_assets:,.0f}원 (목표 대비 110%)
 
 결론: 현재 계획으로는 목표 달성 어려움
 
 권장 조치:
-1. Aggressive형 포트폴리오 채택 (연 {aggressive['expected_annual_return']}% 수익률)
-   - 현재 달성률: {aggressive['achievement_rate']}%
-   - 부족 금액: {target_assets - aggressive['total_expected_assets']:,.0f}원{additional_msg}
+1. Aggressive형 포트폴리오 채택
+   - 명목 수익률: {aggressive['nominal_annual_return']}% (인플레이션 {aggressive['inflation_rate']}% 반영)
+   - 실질 수익률: {aggressive['real_annual_return']}%
+   - 명목 달성률: {aggressive['achievement_rate_nominal']}%
+   - 실질 달성률: {aggressive['achievement_rate_real']}%
+   - 부족 금액 (명목): {target_assets - aggressive['total_expected_assets_nominal']:,.0f}원{additional_msg}
 
 2. 은퇴 시기를 조정하거나 필요 자산을 재검토하세요.
 """
@@ -1137,7 +1180,7 @@ async def serve() -> None:
             ),
             Tool(
                 name=ToojaTools.CALCULATE_RETIREMENT_ACHIEVEMENT.value,
-                description="은퇴 목표 달성 여부 계산 및 110% 목표 달성 투자 방법 제시",
+                description="은퇴 목표 달성 여부 계산 및 110% 목표 달성 투자 방법 제시 (인플레이션 반영)",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1161,6 +1204,12 @@ async def serve() -> None:
                             "type": "number",
                             "description": "월 투자 가능 금액 (원, 옵션)",
                             "default": 0
+                        },
+                        "scenario_type": {
+                            "type": "string",
+                            "description": "경제 시나리오 ('pessimistic', 'baseline', 'optimistic', 옵션, 기본값: 'baseline')",
+                            "enum": ["pessimistic", "baseline", "optimistic"],
+                            "default": "baseline"
                         }
                     },
                     "required": ["current_age", "retirement_age", "current_assets", "required_retirement_assets"]
@@ -1248,7 +1297,8 @@ async def serve() -> None:
                         arguments['retirement_age'],
                         arguments['current_assets'],
                         arguments['required_retirement_assets'],
-                        arguments.get('monthly_investment', 0)
+                        arguments.get('monthly_investment', 0),
+                        arguments.get('scenario_type', 'baseline')
                     )
 
                 case ToojaTools.COMPARE_TAX_EFFICIENCY.value:

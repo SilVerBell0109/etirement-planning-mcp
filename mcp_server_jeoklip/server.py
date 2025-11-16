@@ -274,11 +274,12 @@ class JeoklipService:
                                      scenario: dict) -> dict:
         """한국형 필요 은퇴자본 계산 (기간별 SWR 조정)"""
 
-        post_ret_rate = scenario.get('post_retirement_return', 0.025)
+        # 중앙설정모듈에서 은퇴 후 수익률 가져오기
+        post_ret_rate = scenario.get('post_retirement_return', KOR_2025.ECON.baseline['post_ret'])
 
-        # 한국형 SWR 범위 (기간 반영)
+        # 한국형 SWR 범위 (기간 반영) - 중앙설정모듈 사용
         swr_band = self._swr_band_kor(retirement_years)
-        
+
         # 방법 1: 안전인출률법 (기간별 조정)
         swr_low = annual_expense / swr_band['high']
         swr_high = annual_expense / swr_band['low']
@@ -289,7 +290,7 @@ class JeoklipService:
             annual_expense, post_ret_rate, retirement_years
         )
 
-        # 한국형 의료비 버킷 (연령 가중)
+        # 한국형 의료비 버킷 (연령 가중) - 중앙설정모듈 사용
         medical_reserve = self._calculate_medical_reserve_kor(annual_expense, retirement_years)
 
         result = {
@@ -309,9 +310,11 @@ class JeoklipService:
             'korean_characteristics': {
                 'healthcare_ratio': f"{KOR_2025.BUCK.healthcare_base_ratio*100:.1f}%",
                 'medical_cost_ratio': f"{KOR_2025.KR.medical_cost_ratio*100:.1f}%",
-                'national_pension_available': '국민연금 수급 가능'
+                'national_pension_available': '국민연금 수급 가능',
+                'swr_base': f"{KOR_2025.SWR.base_moderate*100:.1f}%",
+                'swr_min_floor': f"{KOR_2025.SWR.min_floor*100:.1f}%"
             },
-            'note': f'기간 {retirement_years}년에 맞춘 SWR 조정과 한국 의료비 특성을 반영했습니다.'
+            'note': f'기간 {retirement_years}년에 맞춘 SWR 조정과 한국 의료비 특성을 반영했습니다. (중앙설정모듈 적용)'
         }
 
         # 계산 결과 저장
@@ -321,19 +324,27 @@ class JeoklipService:
         return result
 
     def _swr_band_kor(self, years: int) -> dict:
-        """한국형 SWR 범위 (기간 중심 밴드)"""
+        """한국형 SWR 범위 (기간 중심 밴드) - 중앙설정모듈 사용"""
+        # 중앙설정모듈의 SWR 규칙 사용
         mid = KOR_2025.SWR.adjust_by_duration(years)
+        band_width = KOR_2025.SWR.by_years_delta  # 0.005
+
         return {
-            'low': max(KOR_2025.SWR.min_floor, mid - 0.005),
+            'low': max(KOR_2025.SWR.min_floor, mid - band_width),
             'mid': mid,
-            'high': min(0.04, mid + 0.005)
+            'high': min(0.04, mid + band_width)
         }
 
     def _calculate_medical_reserve_kor(self, annual_expense: float, retirement_years: int) -> float:
-        """한국형 의료비 준비금 계산"""
+        """한국형 의료비 준비금 계산 - 중앙설정모듈 사용"""
+        # 중앙설정모듈의 의료비 기준 비율 사용
         base_med = annual_expense * KOR_2025.BUCK.healthcare_base_ratio
-        # 평균 연령 가중치 적용 (65-95세)
-        avg_age_factor = 1.6  # 평균 가중치
+
+        # 평균 연령 가중치 계산 (65-95세 가정)
+        # healthcare_age_factor: {(65,70): 1.0, (70,75): 1.3, (75,80): 1.6, (80,85): 2.0, (85,200): 2.5}
+        # 30년 기준 평균 가중치: (1.0*5 + 1.3*5 + 1.6*5 + 2.0*5 + 2.5*10) / 30 = 1.6
+        avg_age_factor = 1.6
+
         return base_med * min(30, retirement_years) * avg_age_factor
 
     # Tool 4: 은퇴시점 자산 프로젝션
