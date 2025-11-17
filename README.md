@@ -99,9 +99,9 @@
 
 ```bash
 # 1️⃣ Docker 이미지 다운로드
-docker pull silverbell0109/jeoklip_server:1.0.0
-docker pull silverbell0109/tooja_server:1.0.0
-docker pull silverbell0109/inchul_server:1.0.0
+docker pull silverbell0109/inchul_server:latest
+docker pull silverbell0109/jeoklip_server:latest
+docker pull silverbell0109/tooja_server:latest
 
 # 2️⃣ Claude Desktop 설정 (아래 섹션 참고)
 ```
@@ -183,9 +183,9 @@ docker compose version
 #### Step 2: Docker 이미지 다운로드
 
 ```powershell
-docker pull silverbell0109/jeoklip_server:1.0.0
-docker pull silverbell0109/tooja_server:1.0.0
-docker pull silverbell0109/inchul_server:1.0.0
+docker pull silverbell0109/inchul_server:latest
+docker pull silverbell0109/jeoklip_server:latest
+docker pull silverbell0109/tooja_server:latest
 ```
 
 ⏱️ 첫 다운로드는 2-3분 소요됩니다.
@@ -210,7 +210,7 @@ notepad claude_desktop_config.json
         "run",
         "--rm",
         "-i",
-        "silverbell0109/jeoklip_server:1.0.0"
+        "silverbell0109/jeoklip_server:latest"
       ]
     },
     "tooja": {
@@ -219,7 +219,7 @@ notepad claude_desktop_config.json
         "run",
         "--rm",
         "-i",
-        "silverbell0109/tooja_server:1.0.0"
+        "silverbell0109/tooja_server:latest"
       ]
     },
     "inchul": {
@@ -228,7 +228,7 @@ notepad claude_desktop_config.json
         "run",
         "--rm",
         "-i",
-        "silverbell0109/inchul_server:1.0.0"
+        "silverbell0109/inchul_server:latest"
       ]
     }
   }
@@ -259,11 +259,9 @@ docker compose version
 #### Step 2: Docker 이미지 다운로드 (선택사항)
 
 ```bash
-# Claude Desktop 설정 시 자동으로 다운로드되지만,
-# 사전에 다운로드하려면 아래 명령어를 실행하세요:
-docker pull silverbell0109/jeoklip_server:1.0.0
-docker pull silverbell0109/tooja_server:1.0.0
-docker pull silverbell0109/inchul_server:1.0.0
+docker pull silverbell0109/inchul_server:latest
+docker pull silverbell0109/jeoklip_server:latest
+docker pull silverbell0109/tooja_server:latest
 ```
 
 #### Step 3: Claude Desktop 연동
@@ -323,11 +321,9 @@ docker ps
 #### Step 2: Docker 이미지 다운로드 (선택사항)
 
 ```bash
-# Claude Desktop 설정 시 자동으로 다운로드되지만,
-# 사전에 다운로드하려면 아래 명령어를 실행하세요:
-docker pull silverbell0109/jeoklip_server:1.0.0
-docker pull silverbell0109/tooja_server:1.0.0
-docker pull silverbell0109/inchul_server:1.0.0
+docker pull silverbell0109/inchul_server:latest
+docker pull silverbell0109/jeoklip_server:latest
+docker pull silverbell0109/tooja_server:latest
 ```
 
 ⏱️ 첫 다운로드는 2-3분 소요됩니다.
@@ -373,7 +369,7 @@ nano ~/.config/Claude/claude_desktop_config.json
         "run",
         "--rm",
         "-i",
-        "silverbell0109/jeoklip_server:1.0.0"
+        "silverbell0109/jeoklip_server:latest"
       ]
     },
     "tooja": {
@@ -382,7 +378,7 @@ nano ~/.config/Claude/claude_desktop_config.json
         "run",
         "--rm",
         "-i",
-        "silverbell0109/tooja_server:1.0.0"
+        "silverbell0109/tooja_server:latest"
       ]
     },
     "inchul": {
@@ -391,7 +387,7 @@ nano ~/.config/Claude/claude_desktop_config.json
         "run",
         "--rm",
         "-i",
-        "silverbell0109/inchul_server:1.0.0"
+        "silverbell0109/inchul_server:latest"
       ]
     }
   }

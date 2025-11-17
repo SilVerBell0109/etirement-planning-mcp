@@ -6,7 +6,7 @@
         "run",
         "--rm",
         "-i",
-        "silverbell0109/jeoklip_server:1.0.0"
+        "silverbell0109/jeoklip_server:latest"
       ]
     },
     "tooja": {
@@ -15,7 +15,7 @@
         "run",
         "--rm",
         "-i",
-        "silverbell0109/tooja_server:1.0.0"
+        "silverbell0109/tooja_server:latest"
       ]
     },
     "inchul": {
@@ -24,7 +24,7 @@
         "run",
         "--rm",
         "-i",
-        "silverbell0109/inchul_server:1.0.0"
+        "silverbell0109/inchul_server:latest"
       ]
     }
   }
