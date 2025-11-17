@@ -256,7 +256,7 @@ docker --version
 docker compose version
 ```
 
-#### Step 2: Docker 이미지 다운로드 (선택사항)
+#### Step 2: Docker 이미지 다운로드
 
 ```bash
 docker pull silverbell0109/inchul_server:latest
@@ -318,7 +318,7 @@ docker ps
 
 **⚠️ 참고:** `docker ps` 실행 시 권한 오류가 발생하면 로그아웃 후 재로그인하세요.
 
-#### Step 2: Docker 이미지 다운로드 (선택사항)
+#### Step 2: Docker 이미지 다운로드
 
 ```bash
 docker pull silverbell0109/inchul_server:latest
@@ -452,9 +452,12 @@ docker images | grep silverbell0109
 ```
 
 2. **Claude Desktop에서 도구 확인**
+   - Claude -> 설정 -> 개발자
+
    - 🔧 jeoklip
    - 🔧 tooja
    - 🔧 inchul
+   - running 상태인지 확인하기
 
 3. **테스트 질문**
 ```
@@ -832,6 +835,8 @@ IRP 5천만원, ISA 3천만원 보유 중입니다.
 
 → 결과: 브릿지 기간 전략 + 계좌별 최적 인출 순서
 ```
+[대화예시]
+(https://claude.ai/share/c2768157-a86b-4571-85be-8da8b78c40d7)
 
 ---
 
