@@ -15,6 +15,7 @@
 - [개요](#-개요)
 - [주요 기능](#-주요-기능)
 - [빠른 시작](#-빠른-시작)
+- [GitHub에서 프로젝트 다운로드](#-github에서-프로젝트-다운로드)
 - [상세 설치 가이드](#-상세-설치-가이드)
 - [툴 사용 가이드](#-툴-사용-가이드)
 - [실전 예시](#-실전-예시)
@@ -31,7 +32,7 @@
 
 ```
 ┌─────────────────────────────────────────┐
-│         Claude Desktop (사용자)          │
+│         Claude Desktop (사용자)           │
 └────────────────┬────────────────────────┘
                  │ MCP Protocol
         ┌────────┴────────┐
@@ -42,8 +43,8 @@
     │            │            │
 ┌───▼───┐   ┌───▼───┐   ┌───▼───┐
 │적립메이트│   │투자메이트│   │인출메이트│
-│Jeoklip │   │ Tooja │   │Inchul │
-└────────┘   └────────┘   └────────┘
+│Jeoklip │  │ Tooja │   │Inchul │
+└────────┘  └───────┘   └───────┘
 ```
 
 ---
@@ -70,7 +71,6 @@
 - ✅ 시장 변동성 기반 동적 조정
 - ✅ 계좌별 실행 플랜 (IRP, ISA, 연금저축 최적화)
 - ✅ 절세 전략 제시
-- ✅ 성과 모니터링
 
 ### 3️⃣ 인출메이트 (Inchul) - 은퇴 후 절세 인출
 
@@ -98,15 +98,68 @@
 ### ⚡ 2단계로 시작하기
 
 ```bash
-# 1️⃣ Docker 이미지 다운로드 (자동)
-# Claude Desktop 설정 시 자동으로 이미지가 다운로드됩니다.
-# 또는 사전에 수동으로 다운로드할 수 있습니다:
+# 1️⃣ Docker 이미지 다운로드
 docker pull silverbell0109/jeoklip_server:1.0.0
 docker pull silverbell0109/tooja_server:1.0.0
 docker pull silverbell0109/inchul_server:1.0.0
 
 # 2️⃣ Claude Desktop 설정 (아래 섹션 참고)
 ```
+
+---
+
+## 📥 GitHub에서 프로젝트 다운로드
+
+### 방법 1: ZIP 파일 다운로드 (권장)
+
+1. **GitHub 저장소 접속**
+   - 프로젝트 저장소 페이지로 이동합니다
+
+2. **ZIP 파일 다운로드**
+   - 페이지 우측 상단의 `Code` 버튼 클릭
+   - `Download ZIP` 선택
+
+   ![GitHub Download ZIP](https://docs.github.com/assets/cb-20363/images/help/repository/code-button.png)
+
+3. **압축 해제**
+
+   **Windows:**
+   ```powershell
+   # 다운로드 폴더로 이동
+   cd $env:USERPROFILE\Downloads
+
+   # 압축 해제 (파일명은 실제 다운로드된 파일명으로 변경)
+   Expand-Archive -Path etirement-planning-mcp-master.zip -DestinationPath .
+
+   # 압축 해제된 폴더로 이동
+   cd etirement-planning-mcp-master
+   ```
+
+   **macOS / Linux:**
+   ```bash
+   # 다운로드 폴더로 이동
+   cd ~/Downloads
+
+   # 압축 해제
+   unzip etirement-planning-mcp-master.zip
+
+   # 압축 해제된 폴더로 이동
+   cd etirement-planning-mcp-master
+   ```
+
+### 방법 2: Git Clone (개발자용)
+
+Git이 설치되어 있다면 다음 명령어로 클론할 수 있습니다:
+
+```bash
+# HTTPS로 클론
+git clone https://github.com/YOUR_USERNAME/etirement-planning-mcp.git
+
+# 클론된 폴더로 이동
+cd etirement-planning-mcp
+```
+
+> **참고:** 이 프로젝트는 Docker 기반으로 실행되므로, 소스 코드를 다운로드하지 않아도 Docker 이미지만으로 사용할 수 있습니다. 소스 코드는 커스터마이징이 필요한 경우에만 다운로드하세요.
 
 ---
 
@@ -127,11 +180,9 @@ docker --version
 docker compose version
 ```
 
-#### Step 2: Docker 이미지 다운로드 (선택사항)
+#### Step 2: Docker 이미지 다운로드
 
 ```powershell
-# Claude Desktop 설정 시 자동으로 다운로드되지만,
-# 사전에 다운로드하려면 아래 명령어를 실행하세요:
 docker pull silverbell0109/jeoklip_server:1.0.0
 docker pull silverbell0109/tooja_server:1.0.0
 docker pull silverbell0109/inchul_server:1.0.0
