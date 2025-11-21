@@ -106,7 +106,38 @@ class InchulService:
             'withdrawal_method': withdrawal_method
         }
 
+        # 인포그래픽 형식의 결과 생성
+        infographic = []
+        infographic.append("╔════════════════════════════════════════════════════════════════╗")
+        infographic.append("║               💰 SWR 기반 인출 기본선 분석                      ║")
+        infographic.append("╠════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                ║")
+        infographic.append("║  📊 시나리오별 인출액 비교                                      ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append("║                                                                ║")
+        infographic.append(f"║  🔵 보수적 │ 연 {round(conservative_result['annual']/10000):>8,}만원 │ 월 {round(conservative_result['annual']/12/10000):>6,}만원 │ {conservative_result['rate']*100:.2f}%  ║")
+        infographic.append(f"║  🟢 균형적 │ 연 {round(moderate_result['annual']/10000):>8,}만원 │ 월 {round(moderate_result['annual']/12/10000):>6,}만원 │ {moderate_result['rate']*100:.2f}%  ║")
+        infographic.append(f"║  🔴 적극적 │ 연 {round(aggressive_result['annual']/10000):>8,}만원 │ 월 {round(aggressive_result['annual']/12/10000):>6,}만원 │ {aggressive_result['rate']*100:.2f}%  ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  ⭐ 권장 인출액 (균형적 기준)                                   ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  📅 연간: {round(recommended_annual/10000):>,}만원                                          ║")
+        infographic.append(f"║  📆 월간: {round(recommended_monthly/10000):>,}만원                                           ║")
+        infographic.append(f"║  📈 인출률: {moderate_result['rate']*100:.2f}%                                            ║")
+        infographic.append(f"║  ⏳ 예상 지속기간: {retirement_period}년                                        ║")
+        infographic.append("║                                                                ║")
+
+        if bridge_period_years > 0:
+            infographic.append("║  ⚠️ 브릿지 기간 분석                                           ║")
+            infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+            infographic.append(f"║  📍 브릿지 기간: {bridge_period_years}년                                           ║")
+            infographic.append(f"║  💵 추가 필요자금: {round(bridge_gap/10000):>,}만원                                 ║")
+            infographic.append("║                                                                ║")
+
+        infographic.append("╚════════════════════════════════════════════════════════════════╝")
+
         return {
+            'infographic': '\n'.join(infographic),
             'withdrawal_scenarios': {
                 '보수적': {
                     '연간': round(conservative_result['annual'], 0),
@@ -266,7 +297,43 @@ class InchulService:
                 )
             }
 
+        # 인포그래픽 형식으로 인출 순서 시각화
+        infographic = []
+        infographic.append("╔════════════════════════════════════════════════════════════════╗")
+        infographic.append("║               🏦 세제 최적화 인출 순서                          ║")
+        infographic.append("╠════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                ║")
+        infographic.append(f"║  📋 연간 필요액: {round(annual_withdrawal_need/10000):>,}만원                                   ║")
+        infographic.append(f"║  🔒 보장소득: {round(guaranteed_income/10000):>,}만원                                       ║")
+        infographic.append(f"║  💳 추가 인출 필요: {round(remaining_need/10000):>,}만원                                ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  📊 인출 순서 (절세 최적화)                                     ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+
+        for seq in withdrawal_sequence:
+            order_emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"][seq['order']-1] if seq['order'] <= 5 else f"{seq['order']}."
+            infographic.append(f"║  {order_emoji} {seq['account'][:20]:<20}                             ║")
+            infographic.append(f"║     💰 금액: {round(seq['amount']/10000):>,}만원 │ 세금: {round(seq['tax_amount']/10000):>,}만원        ║")
+
+        infographic.append("║                                                                ║")
+        infographic.append("║  📈 세금 요약                                                   ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  총 인출액: {round(total_withdrawal/10000):>,}만원                                       ║")
+        infographic.append(f"║  예상 세금: {round(total_tax/10000):>,}만원                                         ║")
+        infographic.append(f"║  세후 수령액: {round((total_withdrawal-total_tax)/10000):>,}만원                                    ║")
+        eff_rate = round(total_tax / total_withdrawal * 100, 2) if total_withdrawal > 0 else 0
+        infographic.append(f"║  실효세율: {eff_rate}%                                                 ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  💡 절세 권장사항                                               ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append("║  ✅ 1순위: 일반 금융계좌 먼저 인출 (페널티 없음)                ║")
+        infographic.append("║  ✅ 2순위: ISA 만기 자금 활용                                   ║")
+        infographic.append("║  ✅ 3순위: 연금계좌는 최대한 늦게 인출 (복리 효과)              ║")
+        infographic.append("║  ⚠️ 연금 과세재원은 연 1,500만원 이하 유지 권장                 ║")
+        infographic.append("╚════════════════════════════════════════════════════════════════╝")
+
         return {
+            'infographic': '\n'.join(infographic),
             'annual_withdrawal_need': round(annual_withdrawal_need, 0),
             'guaranteed_income': round(guaranteed_income, 0),
             'additional_withdrawal_needed': round(remaining_need, 0),
@@ -439,7 +506,49 @@ class InchulService:
                 'rebalancing': '연 1회 실시'
             }
 
+        # 인포그래픽 형식의 버킷 전략 시각화
+        depletion_months = round(bucket1_amount / (annual_withdrawal / 12), 0) if annual_withdrawal > 0 else 0
+
+        infographic = []
+        infographic.append("╔════════════════════════════════════════════════════════════════╗")
+        infographic.append("║               🪣 한국형 3버킷 전략                              ║")
+        infographic.append("╠════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                ║")
+        infographic.append("║  📊 버킷별 자산 배분                                            ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append("║                                                                ║")
+        infographic.append(f"║  🪣1 현금/단기채 ({KOR_2025.BUCK.cash_years}년분)                                        ║")
+        infographic.append(f"║     💰 {round(bucket1_amount/10000):>,}만원                                             ║")
+        infographic.append("║     📦 현금, MMF, 단기채권                                      ║")
+        infographic.append("║     🎯 즉시 인출 가능, 생활비 1순위                             ║")
+        infographic.append("║                                                                ║")
+        infographic.append(f"║  🪣2 중기채/배당 ({KOR_2025.BUCK.income_years}년분)                                        ║")
+        infographic.append(f"║     💰 {round(bucket2_amount/10000):>,}만원                                             ║")
+        infographic.append("║     📦 중기채권, 배당주, 리츠                                   ║")
+        infographic.append("║     🎯 하락장 완충, bucket1 보충                                ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  🪣3 장기성장 (나머지)                                          ║")
+        infographic.append(f"║     💰 {round(bucket3_amount/10000):>,}만원                                             ║")
+        infographic.append("║     📦 주식, 성장형 ETF                                         ║")
+        infographic.append("║     🎯 장기 성장, 회복기 활용                                   ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  🏥 의료비 버킷 (30년분)                                        ║")
+        infographic.append(f"║     💰 {round(healthcare_amount/10000):>,}만원                                          ║")
+        infographic.append("║     🎯 고령화 대비 의료비                                       ║")
+        infographic.append("║                                                                ║")
+        infographic.append(f"║  📈 현재 시장: {strategy['current_condition']:<8}                                    ║")
+        infographic.append(f"║  🔄 전략: {strategy['action'][:35]:<35}       ║")
+        infographic.append(f"║  ⏰ Bucket1 소진 예상: {depletion_months}개월                                 ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  💡 운용 권장사항                                               ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append("║  ✅ bucket1이 1년치 미만으로 줄면 즉시 보충                     ║")
+        infographic.append("║  ✅ 하락장에서는 bucket3 매도를 최대한 지연                     ║")
+        infographic.append("║  ✅ 상승장에서는 적극적으로 이익 실현                           ║")
+        infographic.append("╚════════════════════════════════════════════════════════════════╝")
+
         return {
+            'infographic': '\n'.join(infographic),
             'bucket_allocation': {
                 'bucket1_현금단기채': {
                     '금액': round(bucket1_amount, 0),
@@ -467,7 +576,7 @@ class InchulService:
                 }
             },
             'market_strategy': strategy,
-            'bucket1_depletion_months': round(bucket1_amount / (annual_withdrawal / 12), 0) if annual_withdrawal > 0 else 0,
+            'bucket1_depletion_months': depletion_months,
             'healthcare_ratio': f"{KOR_2025.BUCK.healthcare_base_ratio*100:.1f}%",
             'recommendations': [
                 'bucket1이 1년치 미만으로 줄면 즉시 보충',
@@ -750,9 +859,51 @@ class InchulService:
             'note': '안정성 최우선, 지출 조정 필요'
         })
 
-        # ========== 통합 결과 반환 ==========
+        # ========== 통합 인포그래픽 생성 ==========
+        infographic = []
+        infographic.append("╔══════════════════════════════════════════════════════════════════════════════╗")
+        infographic.append("║                    📋 인출메이트 통합 은퇴 인출 계획                          ║")
+        infographic.append("╠══════════════════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  📊 기본 정보                                                                ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  💰 총 은퇴자산: {round(total_assets/100000000, 1):.1f}억원                                                     ║")
+        infographic.append(f"║  📆 월 지출목표: {round(monthly_expenses/10000)}만원                                                        ║")
+        infographic.append(f"║  🏛️ 월 연금수령: {round(monthly_pension/10000)}만원                                                        ║")
+        infographic.append(f"║  ⏳ 은퇴 기간: {retirement_years}년 │ 브릿지: {bridge_years}년                                           ║")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  📈 인출 타깃 (권장)                                                         ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+
+        if bridge_years > 0:
+            infographic.append(f"║  🔴 브릿지 기간 ({bridge_years}년): 월 {round(monthly_expenses/10000)}만원 전액 자산에서 인출                      ║")
+        infographic.append(f"║  🟢 연금 수령 후: 월 {round(post_bridge_monthly_need/10000)}만원 추가 인출 필요                                   ║")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  🏦 인출 순서 (절세 최적화)                                                  ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append("║  1️⃣ 일반 금융계좌 ──▶ 2️⃣ ISA ──▶ 3️⃣ 연금계좌                                ║")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  🪣 3버킷 전략 배분                                                          ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        bucket1 = bucket_status_card['bucket_allocation']['bucket1_현금단기채']['금액']
+        bucket2 = bucket_status_card['bucket_allocation']['bucket2_중기채배당']['금액']
+        bucket3 = bucket_status_card['bucket_allocation']['bucket3_장기성장']['금액']
+        healthcare = bucket_status_card['bucket_allocation']['의료비_버킷']['금액']
+        infographic.append(f"║  🪣1 현금/단기채: {round(bucket1/10000):>,}만원 │ 🪣2 중기채/배당: {round(bucket2/10000):>,}만원                    ║")
+        infographic.append(f"║  🪣3 장기성장: {round(bucket3/10000):>,}만원 │ 🏥 의료비: {round(healthcare/10000):>,}만원                        ║")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  💡 핵심 권장사항                                                            ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append("║  ✅ 일반계좌 → ISA → 연금계좌 순서로 인출                                    ║")
+        infographic.append("║  ✅ 연금 과세재원은 연 1,500만원 이하 유지                                    ║")
+        infographic.append("║  ✅ bucket1이 1년분 미만으로 줄면 즉시 재충전                                 ║")
+        infographic.append("║  ⚠️ 하락장에서는 bucket3 매도 지연                                           ║")
+        infographic.append(f"║  ⚠️ 비상금 {round(emergency_fund/10000)}만원 별도 확보 권장                                             ║")
+        infographic.append("║                                                                              ║")
+        infographic.append("╚══════════════════════════════════════════════════════════════════════════════╝")
 
         return {
+            'infographic': '\n'.join(infographic),
             'input_summary': {
                 '총_은퇴자산': round(total_assets, 0),
                 '월_지출목표': round(monthly_expenses, 0),
@@ -841,7 +992,45 @@ class InchulService:
             }
         }
 
+        # 인포그래픽 생성
+        infographic = []
+        infographic.append("╔══════════════════════════════════════════════════════════════════════════════╗")
+        infographic.append("║                    📊 일반계좌 vs 절세계좌 비교 분석                          ║")
+        infographic.append("╠══════════════════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  📋 투자 요약                                                                ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  ⏳ 투자기간: {investment_period_years}년 │ 월 투자: {round(monthly_investment/10000)}만원 │ 총원금: {round(total_investment/10000):,}만원      ║")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  💰 계좌별 세후 수익 비교                                                    ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append("║                                                                              ║")
+        infographic.append(f"║  🔵 일반계좌                                                                 ║")
+        infographic.append(f"║     세전: {round(general_account_result['total_value_before_tax']/10000):>,}만원 │ 세금: {round(general_account_result['total_tax']/10000):>,}만원 │ 세후: {round(general_account_result['total_value_after_tax']/10000):>,}만원 ║")
+        infographic.append("║                                                                              ║")
+        infographic.append(f"║  🟢 ISA (비과세 200만원, 초과분 9.9%)                                        ║")
+        infographic.append(f"║     세전: {round(isa_account_result['total_value_before_tax']/10000):>,}만원 │ 세금: {round(isa_account_result['total_tax']/10000):>,}만원 │ 세후: {round(isa_account_result['total_value_after_tax']/10000):>,}만원 ║")
+        infographic.append("║                                                                              ║")
+        infographic.append(f"║  🟡 IRP/연금저축 (과세이연 + 세액공제)                                       ║")
+        infographic.append(f"║     세전: {round(irp_account_result['total_value_before_tax']/10000):>,}만원 │ 세금: {round(irp_account_result['pension_income_tax']/10000):>,}만원 │ 세후: {round(irp_account_result['total_value_after_tax']/10000):>,}만원 ║")
+        infographic.append(f"║     💎 세액공제 혜택: {round(irp_account_result['tax_deduction_benefit']/10000):>,}만원                                        ║")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  📈 절세 효과                                                                ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        isa_savings = tax_savings_vs_general['ISA_vs_일반계좌']['세금_절감액']
+        irp_savings = tax_savings_vs_general['IRP_vs_일반계좌']['세금_절감액']
+        infographic.append(f"║  ISA → 일반계좌 대비 {round(isa_savings/10000):>,}만원 절세 ({tax_savings_vs_general['ISA_vs_일반계좌']['절감률']}%)           ║")
+        infographic.append(f"║  IRP → 일반계좌 대비 {round(irp_savings/10000):>,}만원 절세 ({tax_savings_vs_general['IRP_vs_일반계좌']['절감률']}%)           ║")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  💡 권장 전략                                                                ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append("║  1️⃣ IRP/연금저축 우선 활용 (월 150만원까지)                                   ║")
+        infographic.append("║  2️⃣ ISA 추가 활용 (연 2,000만원 한도)                                        ║")
+        infographic.append("║  3️⃣ 일반계좌는 국내주식/KRX금 위주                                           ║")
+        infographic.append("╚══════════════════════════════════════════════════════════════════════════════╝")
+
         return {
+            'infographic': '\n'.join(infographic),
             'investment_summary': {
                 '투자기간': f'{investment_period_years}년',
                 '월_투자액': round(monthly_investment, 0),

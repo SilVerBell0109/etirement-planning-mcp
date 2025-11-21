@@ -168,8 +168,42 @@ class JeoklipService:
         emergency_fund_status = '충분' if current_cash >= emergency_fund_min else '부족'
         emergency_fund_gap = max(0, emergency_fund_min - current_cash)
 
+        # 인포그래픽 형식 생성
+        current_age = user_profile.get('current_age', 0)
+        target_retirement_age = user_profile.get('target_retirement_age', 0)
+        total_assets = sum(asset_portfolio.values())
+        savings_rate = (monthly_savings_capacity/monthly_income*100) if monthly_income > 0 else 0
+
+        infographic = []
+        infographic.append("╔════════════════════════════════════════════════════════════════╗")
+        infographic.append("║               📋 사용자 정보 수집 완료                           ║")
+        infographic.append("╠════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                ║")
+        infographic.append("║  👤 기본 정보                                                   ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  🎂 현재 나이: {current_age}세 │ 🎯 목표 은퇴: {target_retirement_age}세 │ 남은기간: {target_retirement_age-current_age}년   ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  💵 소득/지출/저축                                              ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  월 소득: {round(monthly_income/10000)}만원 │ 월 지출: {round(monthly_expense/10000)}만원 │ 월 저축: {round(monthly_savings_capacity/10000)}만원  ║")
+        infographic.append(f"║  저축률: {savings_rate:.1f}% │ 평가: {self._evaluate_savings_rate(monthly_savings_capacity, monthly_income)[:10]}       ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  💰 자산 현황                                                   ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  총 자산: {round(total_assets/10000):,}만원                                         ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  🏦 비상금/여유금                                               ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        status_emoji = "✅" if emergency_fund_status == '충분' else "⚠️"
+        infographic.append(f"║  {status_emoji} 현재: {round(current_cash/10000)}만원 │ 권장: {round(emergency_fund_min/10000)}~{round(emergency_fund_max/10000)}만원              ║")
+        if emergency_fund_gap > 0:
+            infographic.append(f"║  ⚠️ 부족액: {round(emergency_fund_gap/10000)}만원 (추가 확보 필요)                        ║")
+        infographic.append("║                                                                ║")
+        infographic.append("╚════════════════════════════════════════════════════════════════╝")
+
         result = {
             'status': 'success',
+            'infographic': '\n'.join(infographic),
             'message': '사용자 정보가 성공적으로 수집되었습니다.',
             'csv_saved': csv_saved,
             'csv_message': csv_message,
@@ -254,7 +288,35 @@ class JeoklipService:
             }
         }
 
+        # 인포그래픽 생성
+        infographic = []
+        infographic.append("╔════════════════════════════════════════════════════════════════╗")
+        infographic.append("║               📈 한국형 경제 시나리오                            ║")
+        infographic.append("╠════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                ║")
+        infographic.append("║  📊 3가지 시나리오 비교                                          ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append("║                                                                ║")
+        pess = scenarios['pessimistic']
+        base = scenarios['baseline']
+        opti = scenarios['optimistic']
+        infographic.append(f"║  🔵 보수 시나리오 (확률 {pess['probability']*100:.0f}%)                                 ║")
+        infographic.append(f"║     물가: {pess['inflation_rate']*100:.1f}% │ 은퇴전 수익: {pess['pre_retirement_return']*100:.1f}% │ 은퇴후: {pess['post_retirement_return']*100:.1f}%  ║")
+        infographic.append("║                                                                ║")
+        infographic.append(f"║  🟢 기준 시나리오 (확률 {base['probability']*100:.0f}%) ⭐ 권장                        ║")
+        infographic.append(f"║     물가: {base['inflation_rate']*100:.1f}% │ 은퇴전 수익: {base['pre_retirement_return']*100:.1f}% │ 은퇴후: {base['post_retirement_return']*100:.1f}%  ║")
+        infographic.append("║                                                                ║")
+        infographic.append(f"║  🔴 공격 시나리오 (확률 {opti['probability']*100:.0f}%)                                 ║")
+        infographic.append(f"║     물가: {opti['inflation_rate']*100:.1f}% │ 은퇴전 수익: {opti['pre_retirement_return']*100:.1f}% │ 은퇴후: {opti['post_retirement_return']*100:.1f}%  ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  📉 한국 시장 특성                                               ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  KOSPI 변동성: {KOR_2025.MKT.kospi_volatility*100:.0f}% │ 채권 변동성: {KOR_2025.MKT.bond_volatility*100:.0f}%               ║")
+        infographic.append("║                                                                ║")
+        infographic.append("╚════════════════════════════════════════════════════════════════╝")
+
         result = {
+            'infographic': '\n'.join(infographic),
             'scenarios': scenarios,
             'market_characteristics': {
                 'kospi_volatility': KOR_2025.MKT.kospi_volatility,
@@ -293,7 +355,37 @@ class JeoklipService:
         # 한국형 의료비 버킷 (연령 가중) - 중앙설정모듈 사용
         medical_reserve = self._calculate_medical_reserve_kor(annual_expense, retirement_years)
 
+        recommended_total = round((swr_avg + pv_method) / 2 + medical_reserve, 0)
+
+        # 인포그래픽 생성
+        infographic = []
+        infographic.append("╔════════════════════════════════════════════════════════════════╗")
+        infographic.append("║               💰 필요 은퇴자본 계산 결과                         ║")
+        infographic.append("╠════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                ║")
+        infographic.append(f"║  📋 입력 정보: 연 지출 {round(annual_expense/10000)}만원 │ 은퇴기간 {retirement_years}년           ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  📊 계산 방법별 결과                                            ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  🔵 안전인출률법 (SWR)                                          ║")
+        infographic.append(f"║     최소: {round(swr_low/100000000, 1):.1f}억 │ 평균: {round(swr_avg/100000000, 1):.1f}억 │ 최대: {round(swr_high/100000000, 1):.1f}억           ║")
+        infographic.append(f"║     SWR: {swr_band['low']*100:.2f}% ~ {swr_band['mid']*100:.2f}% ~ {swr_band['high']*100:.2f}%                       ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  🟢 연금현가법 (PV)                                             ║")
+        infographic.append(f"║     필요 자본: {round(pv_method/100000000, 1):.1f}억원                                       ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  🏥 의료비 준비금                                               ║")
+        infographic.append(f"║     {round(medical_reserve/100000000, 1):.1f}억원 (연 지출의 {KOR_2025.BUCK.healthcare_base_ratio*100:.0f}% × 연령가중)              ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  ⭐ 권장 총 필요 자본                                           ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║           💎 {round(recommended_total/100000000, 1):.1f}억원 💎                                    ║")
+        infographic.append("║                                                                ║")
+        infographic.append("╚════════════════════════════════════════════════════════════════╝")
+
         result = {
+            'infographic': '\n'.join(infographic),
             'safe_withdrawal_method': {
                 '최소필요자본': round(swr_low, 0),
                 '최대필요자본': round(swr_high, 0),
@@ -306,7 +398,7 @@ class JeoklipService:
             },
             'present_value_method': round(pv_method, 0),
             'medical_reserve': round(medical_reserve, 0),
-            'recommended_total': round((swr_avg + pv_method) / 2 + medical_reserve, 0),
+            'recommended_total': recommended_total,
             'korean_characteristics': {
                 'healthcare_ratio': f"{KOR_2025.BUCK.healthcare_base_ratio*100:.1f}%",
                 'medical_cost_ratio': f"{KOR_2025.KR.medical_cost_ratio*100:.1f}%",
@@ -376,7 +468,28 @@ class JeoklipService:
 
         total_projected = sum(projected_assets.values())
 
+        # 인포그래픽 생성
+        infographic = []
+        infographic.append("╔════════════════════════════════════════════════════════════════╗")
+        infographic.append("║               📈 은퇴시점 예상 자산                              ║")
+        infographic.append("╠════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                ║")
+        infographic.append(f"║  📅 {years_to_retirement}년 후 은퇴 시점 예상 자산                              ║")
+        infographic.append(f"║  📊 적용 수익률: {pre_ret_rate * 100:.1f}%                                         ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  💰 자산별 예상 가치                                            ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        for asset_name, value in projected_assets.items():
+            infographic.append(f"║  • {asset_name[:15]:<15}: {round(value/10000):>,}만원                            ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  ⭐ 총 예상 자산                                                ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║           💎 {round(total_projected/100000000, 1):.1f}억원 💎                                    ║")
+        infographic.append("║                                                                ║")
+        infographic.append("╚════════════════════════════════════════════════════════════════╝")
+
         result = {
+            'infographic': '\n'.join(infographic),
             'total_projected_assets': round(total_projected, 0),
             'breakdown': projected_assets,
             'assumptions': {
@@ -400,8 +513,31 @@ class JeoklipService:
         gap_pct = (gap / required_capital * 100) if required_capital > 0 else 0
 
         status = '충분' if gap <= 0 else '부족'
+        status_emoji = "✅" if gap <= 0 else "⚠️"
+
+        # 인포그래픽 생성
+        infographic = []
+        infographic.append("╔════════════════════════════════════════════════════════════════╗")
+        infographic.append("║               📊 자금 격차 분석                                  ║")
+        infographic.append("╠════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                ║")
+        infographic.append("║  💰 필요 vs 예상 자산 비교                                       ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append("║                                                                ║")
+        infographic.append(f"║  📋 필요 은퇴자본:     {round(required_capital/100000000, 1):>6.1f}억원                           ║")
+        infographic.append(f"║  📈 예상 은퇴자산:     {round(projected_assets/100000000, 1):>6.1f}억원                           ║")
+        infographic.append("║  ──────────────────────────────────────────────────────────    ║")
+        if gap > 0:
+            infographic.append(f"║  ⚠️ 부족 금액:         {round(gap/100000000, 1):>6.1f}억원 ({gap_pct:.1f}%)                  ║")
+        else:
+            infographic.append(f"║  ✅ 초과 금액:         {round(abs(gap)/100000000, 1):>6.1f}억원 ({abs(gap_pct):.1f}%)                  ║")
+        infographic.append("║                                                                ║")
+        infographic.append(f"║  {status_emoji} 상태: 은퇴자금 {status}                                            ║")
+        infographic.append("║                                                                ║")
+        infographic.append("╚════════════════════════════════════════════════════════════════╝")
 
         result = {
+            'infographic': '\n'.join(infographic),
             'required_capital': round(required_capital, 0),
             'projected_assets': round(projected_assets, 0),
             'gap_amount': round(gap, 0),
@@ -446,11 +582,40 @@ class JeoklipService:
             recommendations.append("주택연금 도입을 검토하세요 (한도 3억원).")
             recommendations.append("국민연금 수급 시점을 늦추는 것을 고려하세요.")
 
+        additional_needed = round(monthly_pmt - current_monthly_savings, 0)
+
+        # 인포그래픽 생성
+        infographic = []
+        infographic.append("╔════════════════════════════════════════════════════════════════╗")
+        infographic.append("║               📊 저축계획 최적화                                 ║")
+        infographic.append("╠════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                ║")
+        infographic.append(f"║  💰 필요 저축액 (자금격차 {round(funding_gap/100000000, 1):.1f}억원 해소)                      ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  📆 필요 월 저축: {round(monthly_pmt/10000)}만원 │ 현재: {round(current_monthly_savings/10000)}만원           ║")
+        if additional_needed > 0:
+            infographic.append(f"║  ⚠️ 추가 필요: {round(additional_needed/10000)}만원/월                                    ║")
+        infographic.append(f"║  📈 실행가능성: {feasibility:.0f}%                                            ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  💡 대안 시나리오                                               ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  📅 은퇴 1년 연장시: {round(monthly_pmt * years_to_retirement / (years_to_retirement + 1)/10000)}만원/월                           ║")
+        infographic.append(f"║  📅 은퇴 2년 연장시: {round(monthly_pmt * years_to_retirement / (years_to_retirement + 2)/10000)}만원/월                           ║")
+        infographic.append(f"║  📉 지출 10% 감소시: {round(monthly_pmt * 0.9/10000)}만원/월                            ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  🏠 한국 특화 대안                                              ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  🏠 주택연금 도입시: 월 {round(monthly_pmt * 0.3/10000)}만원 절약                          ║")
+        infographic.append(f"║  🏛️ 국민연금 1년 늦춤: 월 {round(monthly_pmt * 0.2/10000)}만원 절약                       ║")
+        infographic.append("║                                                                ║")
+        infographic.append("╚════════════════════════════════════════════════════════════════╝")
+
         return {
+            'infographic': '\n'.join(infographic),
             'monthly_savings_needed': round(monthly_pmt, 0),
             'annual_savings_needed': round(annual_pmt, 0),
             'current_monthly_savings': current_monthly_savings,
-            'additional_needed': round(monthly_pmt - current_monthly_savings, 0),
+            'additional_needed': additional_needed,
             'feasibility_score': round(feasibility, 1),
             'korean_alternatives': {
                 '주택연금_도입시': f"월 {round(monthly_pmt * 0.3, 0):,}원 절약 가능",
@@ -528,13 +693,42 @@ class JeoklipService:
             ]
         }
 
+        # 인포그래픽 생성
+        years_to_retirement = target_retirement_age - current_age
+
+        infographic = []
+        infographic.append("╔════════════════════════════════════════════════════════════════╗")
+        infographic.append("║               💵 권장 월 지출                                    ║")
+        infographic.append("╠════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                ║")
+        infographic.append(f"║  👤 현재: {current_age}세 │ 목표 은퇴: {target_retirement_age}세 │ 남은기간: {years_to_retirement}년          ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  📊 은퇴 전 권장 지출                                            ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  필수지출(50%): {round(monthly_income * 0.50/10000)}만원 │ 선택지출(30%): {round(monthly_income * 0.30/10000)}만원         ║")
+        infographic.append(f"║  저축(20%): {round(monthly_income * 0.20/10000)}만원 │ 총 권장: {round(monthly_income * 0.80/10000)}만원                   ║")
+        infographic.append(f"║  현재 지출: {round(current_monthly_expense/10000)}만원 │ 평가: {self._evaluate_expense_level(current_monthly_expense, monthly_income)[:15]}  ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  📊 은퇴 후 권장 지출                                            ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  🔵 보수형(70%): {round(current_monthly_expense * 0.70/10000)}만원                                  ║")
+        infographic.append(f"║  🟢 중도형(75%): {round(current_monthly_expense * 0.75/10000)}만원 ⭐ 권장                          ║")
+        infographic.append(f"║  🔴 여유형(80%): {round(current_monthly_expense * 0.80/10000)}만원                                  ║")
+        infographic.append("║                                                                ║")
+        infographic.append("║  💡 참고사항                                                    ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append("║  📉 은퇴 후 감소: 교통비, 의류비, 식비 일부                      ║")
+        infographic.append("║  📈 은퇴 후 증가: 의료비, 여가비                                 ║")
+        infographic.append("╚════════════════════════════════════════════════════════════════╝")
+
         result = {
+            'infographic': '\n'.join(infographic),
             '은퇴전_권장지출': pre_retirement_recommended,
             '은퇴후_권장지출': post_retirement_recommended,
             '현재상황': {
                 '현재나이': current_age,
                 '목표은퇴나이': target_retirement_age,
-                '은퇴까지': f"{target_retirement_age - current_age}년"
+                '은퇴까지': f"{years_to_retirement}년"
             }
         }
 
@@ -622,7 +816,43 @@ class JeoklipService:
         post_bridge_monthly_shortfall = monthly_expense_post_retirement - expected_national_pension
         post_bridge_status = '충분' if post_bridge_monthly_shortfall <= 0 else '부족'
 
+        # 인포그래픽 생성
+        infographic = []
+        infographic.append("╔══════════════════════════════════════════════════════════════════════════════╗")
+        infographic.append("║                    🌉 브릿지 구간 분석                                        ║")
+        infographic.append("╠══════════════════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                              ║")
+        infographic.append(f"║  📅 브릿지 구간: {retirement_age}세 은퇴 ──▶ {national_pension_start_age}세 국민연금 수령 ({bridge_years}년간)              ║")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  💰 자금 소요                                                                ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  월 필요: {round(monthly_shortfall/10000)}만원 │ 연 필요: {round(monthly_shortfall*12/10000)}만원 │ 총 필요: {round(inflation_adjusted_capital/100000000, 1):.1f}억원   ║")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  🪣 3버킷 전략 배분                                                          ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append(f"║  🪣1 현금버킷({cash_bucket_years}년): {round(cash_bucket_amount/10000):,}만원 │ 예금, MMF                      ║")
+        infographic.append(f"║  🪣2 소득버킷({income_bucket_years}년): {round(income_bucket_amount/10000):,}만원 │ 채권, 배당주                   ║")
+        if growth_bucket_years > 0:
+            infographic.append(f"║  🪣3 성장버킷({growth_bucket_years}년): {round(growth_bucket_amount/10000):,}만원 │ 주식형 펀드                    ║")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  🏛️ 브릿지 이후 (국민연금 수령 후)                                           ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        status_emoji = "✅" if post_bridge_status == '충분' else "⚠️"
+        infographic.append(f"║  국민연금: {round(expected_national_pension/10000)}만원 │ 월지출: {round(monthly_expense_post_retirement/10000)}만원                           ║")
+        if post_bridge_monthly_shortfall > 0:
+            infographic.append(f"║  {status_emoji} 추가 필요: {round(post_bridge_monthly_shortfall/10000)}만원/월                                         ║")
+        else:
+            infographic.append(f"║  {status_emoji} 여유: {round(abs(post_bridge_monthly_shortfall)/10000)}만원/월                                             ║")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  💡 권장사항                                                                 ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+        infographic.append("║  ✅ 3버킷 전략으로 현금 유동성과 수익성을 동시에 확보                         ║")
+        infographic.append("║  ✅ 연금저축, IRP 등 세제혜택 계좌를 우선 활용                                ║")
+        infographic.append("║  ✅ 주택연금 가입 조건에 해당하면 적극 검토                                   ║")
+        infographic.append("╚══════════════════════════════════════════════════════════════════════════════╝")
+
         result = {
+            'infographic': '\n'.join(infographic),
             '브릿지구간_기본정보': {
                 '시작나이': retirement_age,
                 '종료나이': national_pension_start_age,
@@ -732,68 +962,71 @@ class JeoklipService:
         bridge_years = bridge_info.get('기간', '0년')
         bridge_total = round(bridge_period.get('브릿지구간_자금소요', {}).get('인플레이션반영', 0))
 
-        # 명확한 텍스트 형식의 요약 생성
-        summary_lines = []
-        summary_lines.append("📌 최종 요약")
-        summary_lines.append("━━━━━━━━━━━━━━━━━━━━")
-
-        # 1. 필요 은퇴자산
-        if required_capital > 0:
-            summary_lines.append(f"- 필요 은퇴자산: {round(required_capital/100000000, 1):.1f}억원")
-        else:
-            summary_lines.append("- 필요 은퇴자산: 계산 필요")
-
-        # 2. 60세(또는 목표 은퇴나이) 예상 자산
+        # 인포그래픽 형식의 최종 요약 생성
         user_info = self.calculation_results.get('user_info', {})
         retirement_age = user_info.get('summary', {}).get('목표은퇴나이', 60)
+
+        infographic = []
+        infographic.append("╔══════════════════════════════════════════════════════════════════════════════╗")
+        infographic.append("║                    📋 적립메이트 최종 요약                                    ║")
+        infographic.append("╠══════════════════════════════════════════════════════════════════════════════╣")
+        infographic.append("║                                                                              ║")
+        infographic.append("║  💰 자산 현황                                                                ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+
+        if required_capital > 0:
+            infographic.append(f"║  📋 필요 은퇴자산: {round(required_capital/100000000, 1):.1f}억원                                              ║")
+        else:
+            infographic.append("║  📋 필요 은퇴자산: 계산 필요                                               ║")
+
         if projected_assets > 0:
-            summary_lines.append(f"- {retirement_age}세 예상 자산: {round(projected_assets/100000000, 1):.1f}억원")
+            infographic.append(f"║  📈 {retirement_age}세 예상 자산: {round(projected_assets/100000000, 1):.1f}억원                                             ║")
         else:
-            summary_lines.append(f"- {retirement_age}세 예상 자산: 계산 필요")
+            infographic.append(f"║  📈 {retirement_age}세 예상 자산: 계산 필요                                              ║")
 
-        # 3. 자금 격차
         if required_capital > 0 and projected_assets > 0:
+            gap_emoji = "✅" if funding_gap <= 0 else "⚠️"
             gap_amount = round(abs(funding_gap)/100000000, 1)
-            summary_lines.append(f"- 자금 격차: {gap_amount:.1f}억원 {gap_status}")
+            infographic.append(f"║  {gap_emoji} 자금 격차: {gap_amount:.1f}억원 {gap_status}                                               ║")
         else:
-            summary_lines.append("- 자금 격차: 계산 필요")
+            infographic.append("║  📊 자금 격차: 계산 필요                                                  ║")
 
-        # 4. 현재 월 저축
+        infographic.append("║                                                                              ║")
+        infographic.append("║  💵 월별 현금흐름                                                            ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+
         if monthly_savings_capacity != 0:
-            summary_lines.append(f"- 현재 월 저축: {round(monthly_savings_capacity/10000)}만원")
+            infographic.append(f"║  💰 현재 월 저축: {round(monthly_savings_capacity/10000)}만원                                                ║")
         else:
-            summary_lines.append("- 현재 월 저축: 계산 필요")
+            infographic.append("║  💰 현재 월 저축: 계산 필요                                               ║")
 
-        # 5. 권장 월 지출 (은퇴 전/후)
         if pre_retirement_recommended > 0:
-            summary_lines.append(f"- 권장 월 지출 (은퇴 전): {round(pre_retirement_recommended/10000)}만원")
-        else:
-            summary_lines.append("- 권장 월 지출 (은퇴 전): 계산 필요")
-
+            infographic.append(f"║  📊 권장 월 지출 (은퇴 전): {round(pre_retirement_recommended/10000)}만원                                    ║")
         if post_retirement_recommended > 0:
-            summary_lines.append(f"- 권장 월 지출 (은퇴 후): {round(post_retirement_recommended/10000)}만원")
-        else:
-            summary_lines.append("- 권장 월 지출 (은퇴 후): 계산 필요")
+            infographic.append(f"║  📊 권장 월 지출 (은퇴 후): {round(post_retirement_recommended/10000)}만원                                    ║")
 
-        # 6. 비상금
+        infographic.append("║                                                                              ║")
+        infographic.append("║  🏦 안전자금                                                                 ║")
+        infographic.append("║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ║")
+
         if emergency_fund:
             emergency_min = round(emergency_fund.get('권장_최소금액', 0)/10000)
             emergency_max = round(emergency_fund.get('권장_최대금액', 0)/10000)
-            summary_lines.append(f"- 비상금/여유금: {round(current_emergency_fund/10000)}만원 (권장: {emergency_min}~{emergency_max}만원)")
+            status_emoji = "✅" if emergency_fund.get('상태') == '충분' else "⚠️"
+            infographic.append(f"║  {status_emoji} 비상금: {round(current_emergency_fund/10000)}만원 (권장: {emergency_min}~{emergency_max}만원)                      ║")
         else:
-            summary_lines.append("- 비상금/여유금: 계산 필요")
+            infographic.append("║  🏦 비상금: 계산 필요                                                     ║")
 
-        # 7. 브릿지 기간
         if bridge_total > 0:
-            summary_lines.append(f"- 브릿지 기간: {bridge_years} 동안 {round(bridge_total/100000000, 1):.1f}억원 필요")
+            infographic.append(f"║  🌉 브릿지 기간: {bridge_years} 동안 {round(bridge_total/100000000, 1):.1f}억원 필요                               ║")
         elif bridge_period:
-            summary_lines.append("- 브릿지 기간: 없음 (은퇴와 동시에 국민연금 수령)")
-        else:
-            summary_lines.append("- 브릿지 기간: 계산 필요")
+            infographic.append("║  🌉 브릿지 기간: 없음 (은퇴와 동시에 국민연금 수령)                        ║")
 
+        infographic.append("║                                                                              ║")
+        infographic.append("╚══════════════════════════════════════════════════════════════════════════════╝")
 
         # 텍스트를 하나의 문자열로 결합
-        summary_text = "\n".join(summary_lines)
+        summary_text = "\n".join(infographic)
 
         return {
             'status': 'success',
