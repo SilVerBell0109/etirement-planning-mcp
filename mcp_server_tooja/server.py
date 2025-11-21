@@ -69,6 +69,214 @@ class AccountAllocation(BaseModel):
     isa_limit_reached: bool
 
 
+# ========== 시각화 헬퍼 함수 ==========
+
+class VisualFormatter:
+    """응답을 시각적으로 표현하기 위한 포맷터"""
+
+    @staticmethod
+    def format_progress_bar(value: float, max_value: float, width: int = 30, label: str = "") -> str:
+        """진행 바 생성"""
+        percentage = min(100, (value / max_value * 100))
+        filled = int(width * value / max_value)
+        bar = '█' * filled + '░' * (width - filled)
+        return f"{label} [{bar}] {percentage:.1f}%"
+
+    @staticmethod
+    def format_allocation_chart(allocation: dict) -> str:
+        """자산 배분 차트 생성"""
+        chart = "\n📊 자산 배분 비율\n" + "=" * 50 + "\n"
+        total = sum(allocation.values())
+
+        for asset, value in sorted(allocation.items(), key=lambda x: x[1], reverse=True):
+            percentage = (value / total * 100) if total > 0 else 0
+            bar_length = int(percentage / 2.5)  # 40칸 기준
+            bar = '█' * bar_length + '░' * (40 - bar_length)
+            chart += f"{asset:8s} [{bar}] {percentage:5.1f}%\n"
+
+        return chart
+
+    @staticmethod
+    def format_comparison_table(data: dict, title: str = "") -> str:
+        """비교 테이블 생성"""
+        if title:
+            table = f"\n📋 {title}\n" + "=" * 80 + "\n"
+        else:
+            table = "\n" + "=" * 80 + "\n"
+
+        table += f"{'항목':<20s} | {'값':>20s}\n"
+        table += "-" * 80 + "\n"
+
+        for key, value in data.items():
+            if isinstance(value, (int, float)):
+                if value > 1000:
+                    value_str = f"{value:,.0f}원"
+                else:
+                    value_str = f"{value:.2f}"
+            else:
+                value_str = str(value)
+            table += f"{key:<20s} | {value_str:>20s}\n"
+
+        return table
+
+    @staticmethod
+    def format_account_priority_visual(irp_amount: float, isa_amount: float,
+                                       general_amount: float, total: float) -> str:
+        """계좌 우선순위 시각화"""
+        visual = "\n💰 월 투자금 배분 흐름\n" + "=" * 60 + "\n\n"
+
+        # 총 투자금
+        visual += f"총 투자금: {total:,.0f}원\n"
+        visual += "       │\n"
+        visual += "       ▼\n"
+
+        # 1순위: IRP
+        irp_pct = (irp_amount / total * 100) if total > 0 else 0
+        visual += f"┌──────────────────────────────────────┐\n"
+        visual += f"│  1순위: IRP/연금저축                  │\n"
+        visual += f"│  {irp_amount:,.0f}원 ({irp_pct:.1f}%){'':>15s}│\n"
+        visual += f"│  ✓ 세액공제 13.2~16.5%               │\n"
+        visual += f"└──────────────────────────────────────┘\n"
+
+        if isa_amount > 0 or general_amount > 0:
+            visual += "       │ 잔액: " + f"{total - irp_amount:,.0f}원\n"
+            visual += "       ▼\n"
+
+        # 2순위: ISA
+        if isa_amount > 0:
+            isa_pct = (isa_amount / total * 100) if total > 0 else 0
+            visual += f"┌──────────────────────────────────────┐\n"
+            visual += f"│  2순위: ISA                          │\n"
+            visual += f"│  {isa_amount:,.0f}원 ({isa_pct:.1f}%){'':>15s}│\n"
+            visual += f"│  ✓ 비과세 + 9.9% 저율과세            │\n"
+            visual += f"└──────────────────────────────────────┘\n"
+
+            if general_amount > 0:
+                visual += "       │ 잔액: " + f"{general_amount:,.0f}원\n"
+                visual += "       ▼\n"
+
+        # 3순위: 일반계좌
+        if general_amount > 0:
+            general_pct = (general_amount / total * 100) if total > 0 else 0
+            visual += f"┌──────────────────────────────────────┐\n"
+            visual += f"│  3순위: 일반계좌                     │\n"
+            visual += f"│  {general_amount:,.0f}원 ({general_pct:.1f}%){'':>10s}│\n"
+            visual += f"│  한도 초과분 투자                    │\n"
+            visual += f"└──────────────────────────────────────┘\n"
+
+        return visual
+
+    @staticmethod
+    def format_scenario_comparison(scenarios: dict) -> str:
+        """시나리오 비교 테이블 생성"""
+        visual = "\n📈 위험성향별 시나리오 비교\n" + "=" * 100 + "\n\n"
+
+        # 헤더
+        visual += f"{'구분':<15s} | {'안정형':>25s} | {'중립형':>25s} | {'공격형':>25s}\n"
+        visual += "-" * 100 + "\n"
+
+        # 연간 수익률
+        visual += f"{'명목수익률':<15s} | "
+        visual += f"{scenarios['conservative']['nominal_annual_return']:>24.1f}% | "
+        visual += f"{scenarios['moderate']['nominal_annual_return']:>24.1f}% | "
+        visual += f"{scenarios['aggressive']['nominal_annual_return']:>24.1f}%\n"
+
+        # 실질 수익률
+        visual += f"{'실질수익률':<15s} | "
+        visual += f"{scenarios['conservative']['real_annual_return']:>24.1f}% | "
+        visual += f"{scenarios['moderate']['real_annual_return']:>24.1f}% | "
+        visual += f"{scenarios['aggressive']['real_annual_return']:>24.1f}%\n"
+
+        visual += "-" * 100 + "\n"
+
+        # 미래 자산 (명목)
+        visual += f"{'미래자산(명목)':<15s} | "
+        for risk_type in ['conservative', 'moderate', 'aggressive']:
+            val = scenarios[risk_type]['total_expected_assets_nominal']
+            visual += f"{val:>22,.0f}원 | "
+        visual += "\n"
+
+        # 미래 자산 (실질)
+        visual += f"{'미래자산(실질)':<15s} | "
+        for risk_type in ['conservative', 'moderate', 'aggressive']:
+            val = scenarios[risk_type]['total_expected_assets_real']
+            visual += f"{val:>22,.0f}원 | "
+        visual += "\n"
+
+        visual += "-" * 100 + "\n"
+
+        # 목표 달성률
+        visual += f"{'목표달성률':<15s} | "
+        for risk_type in ['conservative', 'moderate', 'aggressive']:
+            achievement = scenarios[risk_type]['achievement_rate_nominal']
+            visual += f"{achievement:>24.1f}% | "
+        visual += "\n"
+
+        # 달성 여부 표시
+        visual += f"{'목표달성여부':<15s} | "
+        for risk_type in ['conservative', 'moderate', 'aggressive']:
+            achieves = scenarios[risk_type]['achieves_110_target']
+            status = "✓ 달성" if achieves else "✗ 미달성"
+            visual += f"{status:>25s} | "
+        visual += "\n"
+
+        return visual
+
+    @staticmethod
+    def format_tax_comparison(general: dict, isa: dict, irp: dict) -> str:
+        """세금 비교 차트"""
+        visual = "\n💸 계좌별 세금 비교 (투자 기간 종료 시점)\n" + "=" * 80 + "\n\n"
+
+        accounts = [
+            ("일반계좌", general),
+            ("ISA", isa),
+            ("IRP/연금저축", irp)
+        ]
+
+        max_tax = max(general['total_tax'], isa['total_tax'], irp['total_tax'])
+
+        for account_name, account_data in accounts:
+            tax = account_data['total_tax']
+            after_tax = account_data['total_value_after_tax']
+
+            # 세금 막대 그래프
+            bar_length = int((tax / max_tax * 40)) if max_tax > 0 else 0
+            bar = '█' * bar_length + '░' * (40 - bar_length)
+
+            visual += f"\n{account_name:<12s}\n"
+            visual += f"  세금: [{bar}] {tax:>15,.0f}원\n"
+            visual += f"  세후: {after_tax:>15,.0f}원\n"
+
+        # 절세 효과
+        isa_savings = general['total_tax'] - isa['total_tax']
+        irp_savings = general['total_tax'] - irp['total_tax']
+
+        visual += "\n" + "-" * 80 + "\n"
+        visual += f"💰 ISA 절세액:  {isa_savings:>15,.0f}원\n"
+        visual += f"💰 IRP 절세액:  {irp_savings:>15,.0f}원\n"
+
+        if 'tax_deduction_benefit' in irp:
+            visual += f"💰 IRP 세액공제: {irp['tax_deduction_benefit']:>15,.0f}원 (추가)\n"
+
+        return visual
+
+    @staticmethod
+    def format_portfolio_visual(portfolio: dict) -> str:
+        """포트폴리오 시각화"""
+        visual = f"\n🎯 {portfolio.get('portfolio_name', '포트폴리오')}\n" + "=" * 60 + "\n\n"
+
+        # 자산 배분
+        allocation = portfolio.get('asset_allocation', {})
+        visual += VisualFormatter.format_allocation_chart(allocation)
+
+        # 예상 수익률과 변동성
+        visual += "\n" + "-" * 60 + "\n"
+        visual += f"📊 기대 수익률: {portfolio.get('expected_annual_return', 0):.1f}%\n"
+        visual += f"📉 예상 변동성: {portfolio.get('expected_volatility', 0):.1f}%\n"
+
+        return visual
+
+
 # ========== 투자메이트 서비스 로직 (토큰 절약형) ==========
 
 class ToojaService:
@@ -148,15 +356,15 @@ class ToojaService:
         """포트폴리오 3가지 생성 (간소화)"""
 
         portfolios = {}
-        
+
         for portfolio_type in ['conservative', 'moderate', 'aggressive']:
             allocation = self._lifecycle_allocation_kor(
-                risk_constraints.get('age', 40), 
-                portfolio_type, 
-                risk_constraints.get('life_phase', 'accumulation'), 
+                risk_constraints.get('age', 40),
+                portfolio_type,
+                risk_constraints.get('life_phase', 'accumulation'),
                 risk_constraints.get('risk_score', 50)
             )
-            
+
             portfolios[portfolio_type] = {
                 'portfolio_name': f'{portfolio_type.title()}형',
                 'asset_allocation': allocation,
@@ -166,9 +374,19 @@ class ToojaService:
 
         self.base_portfolios = portfolios
 
+        # 시각화 추가
+        visual_output = "\n" + "="*80 + "\n"
+        visual_output += "🎯 포트폴리오 3가지 제안\n"
+        visual_output += "="*80 + "\n"
+
+        for portfolio_type, portfolio in portfolios.items():
+            visual_output += VisualFormatter.format_portfolio_visual(portfolio)
+            visual_output += "\n"
+
         return {
             'portfolios': portfolios,
-            'recommendation': 'moderate'
+            'recommendation': 'moderate',
+            'visual_summary': visual_output
         }
 
     def _lifecycle_allocation_kor(self, age: int, risk_level: str, phase: str, risk_score: int) -> dict:
@@ -213,6 +431,11 @@ class ToojaService:
         # 3순위: 일반계좌 (나머지)
         general_monthly = remaining - isa_monthly
 
+        # 시각화 추가
+        visual_output = VisualFormatter.format_account_priority_visual(
+            irp_monthly, isa_monthly, general_monthly, monthly_investment
+        )
+
         return {
             'monthly_investment': monthly_investment,
             'account_allocation': {
@@ -240,7 +463,8 @@ class ToojaService:
                 'general_monthly': general_monthly,
                 'total': monthly_investment
             },
-            'warnings': self._generate_account_warnings(monthly_investment, irp_monthly, isa_monthly, isa_limit_reached)
+            'warnings': self._generate_account_warnings(monthly_investment, irp_monthly, isa_monthly, isa_limit_reached),
+            'visual_summary': visual_output
         }
 
     def _generate_account_warnings(self, monthly_investment: float, irp_monthly: float,
@@ -630,6 +854,9 @@ class ToojaService:
                 # 연금의 미래가치 공식을 역으로 계산
                 required_additional_monthly = needed_from_monthly * monthly_rate / (((1 + monthly_rate) ** months - 1))
 
+        # 시각화 추가
+        visual_output = VisualFormatter.format_scenario_comparison(scenarios)
+
         return {
             'financial_status': {
                 'current_age': current_age,
@@ -655,7 +882,8 @@ class ToojaService:
                     required_additional_monthly,
                     inflation_rate
                 )
-            }
+            },
+            'visual_summary': visual_output
         }
 
     def _generate_achievement_message(self, scenarios: dict, recommended_strategy: str,
@@ -782,6 +1010,13 @@ class ToojaService:
             }
         }
 
+        # 시각화 추가
+        visual_output = VisualFormatter.format_tax_comparison(
+            general_account_result,
+            isa_account_result,
+            irp_account_result
+        )
+
         return {
             'investment_summary': {
                 '투자기간': f'{investment_period_years}년',
@@ -801,7 +1036,8 @@ class ToojaService:
                 isa_account_result,
                 irp_account_result,
                 monthly_investment
-            )
+            ),
+            'visual_summary': visual_output
         }
 
     def _simulate_general_account(self, asset_investments: dict, expected_returns: dict,
@@ -1014,6 +1250,7 @@ class ToojaService:
             'total_value_before_tax': round(total_value, 0),
             'total_return': round(total_return_all_assets, 0),
             'pension_income_tax': round(total_tax, 0),
+            'total_tax': round(total_tax, 0),
             'total_value_after_tax': round(total_value - total_tax, 0),
             'effective_tax_rate': round(total_tax / total_value * 100, 2) if total_value > 0 else 0,
             'tax_deduction_benefit': round(tax_deduction_benefit, 0),
