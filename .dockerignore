@@ -1,22 +1,54 @@
-.git
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.venv
-venv
-env
-ENV
-.env
-*.log
-*.sqlite
-.idea
-.vscode
-.DS_Store
+# .dockerignore
+# 은퇴 플래닝 MCP 서버 - Docker 빌드 제외 파일
+
+# Python 캐시
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 가상환경
+venv/
+.venv/
+env/
+.env/
+
+# IDE 설정
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# 테스트/문서
 tests/
+docs/
 *.md
 !README.md
-*.txt
-!requirements.txt
-claude_desktop_config*.json
 
+# 로컬 설정
+.env
+.env.local
+*.local
+
+# 빌드 산출물
+build/
+dist/
+*.egg-info/
+
+# Docker 관련 (중첩 방지)
+Dockerfile*
+docker-compose*.yml
+compose*.yml
+.dockerignore
+
+# 기타
+*.log
+*.tmp
+.DS_Store
+Thumbs.db

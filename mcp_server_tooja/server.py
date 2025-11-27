@@ -1,4 +1,3 @@
-from datetime import datetime
 from enum import Enum
 import json
 from typing import Sequence
@@ -10,15 +9,16 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
 from financial_constants_2025 import KOR_2025 # type: ignore
 
+# KRX 데이터 서비스 import
+from mcp_server_tooja.krx_data_service import KRXDataService, PYKRX_AVAILABLE
+
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
-from mcp.shared.exceptions import McpError
-
-from pydantic import BaseModel
 
 # __pycache__ 폴더 생성 방지
 sys.dont_write_bytecode = True
+
 
 class ToojaTools(str, Enum):
     ASSESS_RISK_PROFILE = "assess_risk_profile"
@@ -29,44 +29,15 @@ class ToojaTools(str, Enum):
     MONITOR_PERFORMANCE = "monitor_portfolio_performance"
     CALCULATE_RETIREMENT_ACHIEVEMENT = "calculate_retirement_achievement"
     COMPARE_TAX_EFFICIENCY = "compare_tax_efficiency_across_accounts"
-
-
-# ========== 데이터 모델 ==========
-
-class RiskProfile(BaseModel):
-    risk_level: str
-    max_equity_ratio: float
-    use_tax_advantaged: bool
-    special_assets_preference: list
-
-
-class Portfolio(BaseModel):
-    portfolio_type: str
-    asset_allocation: dict
-    expected_return: float
-    expected_volatility: float
-
-
-class VolatilityAdjustment(BaseModel):
-    original_allocation: dict
-    adjusted_allocation: dict
-    volatility_regime: str
-    adjustment_reason: str
-
-
-class ImplementationPlan(BaseModel):
-    account_strategy: dict
-    execution_steps: list
-    rebalancing_rules: dict
-
-
-class AccountAllocation(BaseModel):
-    monthly_investment: float
-    irp_monthly: float
-    isa_monthly: float
-    general_monthly: float
-    isa_accumulated: float
-    isa_limit_reached: bool
+    # KRX 데이터 도구
+    GET_MARKET_OVERVIEW = "get_market_overview"
+    GET_MARKET_VOLATILITY = "get_market_volatility"
+    GET_ETF_RECOMMENDATIONS = "get_etf_recommendations"
+    GET_STOCK_PRICE = "get_stock_price"
+    GET_INVESTOR_TRADING = "get_investor_trading"
+    # 신규: 실시간 시장 스크리닝 도구
+    GET_TOP_STOCKS_BY_MARKET_CAP = "get_top_stocks_by_market_cap"
+    GET_TOP_ETFS_BY_PERFORMANCE = "get_top_etfs_by_performance"
 
 
 # ========== 시각화 헬퍼 함수 ==========
@@ -292,11 +263,12 @@ class ToojaService:
         self.user_risk_profile = {}
         self.base_portfolios = {}
         self.isa_accumulated = 0  # ISA 누적 입금액 추적
+        self.krx_service = KRXDataService()  # KRX 데이터 서비스 초기화
 
-    def assess_risk_profile(self, demographic_info: dict, financial_capacity: dict,
-                            liquidity_requirements: dict, behavioral_preferences: dict) -> dict:
+    def assess_risk_profile(self, demographic_info: dict, _financial_capacity: dict,
+                            _liquidity_requirements: dict, behavioral_preferences: dict) -> dict:
         """투자성향 분석 (간소화)"""
-
+        # _financial_capacity, _liquidity_requirements: 향후 확장용 파라미터
         age = demographic_info.get('age', 40)
         retirement_age = demographic_info.get('retirement_age', 65)
         years_to_retirement = retirement_age - age
@@ -353,7 +325,7 @@ class ToojaService:
         return max(0.20, min(max_equity, base_eq))
 
     def generate_three_tier_portfolios(self, risk_constraints: dict) -> dict:
-        """포트폴리오 3가지 생성 (간소화)"""
+        """포트폴리오 3가지 생성 (KRX 실시간 데이터 통합)"""
 
         portfolios = {}
 
@@ -383,10 +355,29 @@ class ToojaService:
             visual_output += VisualFormatter.format_portfolio_visual(portfolio)
             visual_output += "\n"
 
+        # ========== KRX 실시간 데이터 자동 통합 ==========
+        market_overview = self.get_market_overview()
+        investor_trading = self.get_investor_trading()
+
+        # 계좌별 ETF 추천
+        irp_etfs = self.get_etf_recommendations('IRP')
+        isa_etfs = self.get_etf_recommendations('ISA')
+        general_stocks = self.get_etf_recommendations('GENERAL')
+
         return {
             'portfolios': portfolios,
             'recommendation': 'moderate',
-            'visual_summary': visual_output
+            'visual_summary': visual_output,
+            # KRX 실시간 데이터
+            'market_data': {
+                'market_overview': market_overview,
+                'investor_trading': investor_trading,
+            },
+            'etf_recommendations': {
+                'IRP': irp_etfs,
+                'ISA': isa_etfs,
+                'GENERAL': general_stocks,
+            }
         }
 
     def _lifecycle_allocation_kor(self, age: int, risk_level: str, phase: str, risk_score: int) -> dict:
@@ -538,6 +529,15 @@ class ToojaService:
         # 주의사항 및 경고
         warnings = self._generate_implementation_warnings()
 
+        # ========== KRX 실시간 데이터 자동 통합 ==========
+        market_overview = self.get_market_overview()
+        investor_trading = self.get_investor_trading()
+
+        # 계좌별 구체적인 ETF 추천 (실시간 시세 포함)
+        irp_etfs = self.get_etf_recommendations('IRP')
+        isa_etfs = self.get_etf_recommendations('ISA')
+        general_stocks = self.get_etf_recommendations('GENERAL')
+
         return {
             'account_allocation': account_allocation,
             'asset_placement_strategy': asset_placement_strategy,
@@ -547,6 +547,16 @@ class ToojaService:
                 'frequency': '연 1회',
                 'timing': '매년 12월 또는 시장 급변동 시',
                 'threshold': '목표 비중 대비 ±5% 이상 이탈 시'
+            },
+            # KRX 실시간 데이터
+            'market_data': {
+                'market_overview': market_overview,
+                'investor_trading': investor_trading,
+            },
+            'etf_recommendations': {
+                'IRP': irp_etfs,
+                'ISA': isa_etfs,
+                'GENERAL': general_stocks,
             }
         }
 
@@ -857,6 +867,15 @@ class ToojaService:
         # 시각화 추가
         visual_output = VisualFormatter.format_scenario_comparison(scenarios)
 
+        # ========== KRX 실시간 데이터 자동 통합 ==========
+        market_overview = self.get_market_overview()
+        investor_trading = self.get_investor_trading()
+
+        # 추천 전략에 맞는 ETF 추천
+        irp_etfs = self.get_etf_recommendations('IRP')
+        isa_etfs = self.get_etf_recommendations('ISA')
+        general_stocks = self.get_etf_recommendations('GENERAL')
+
         return {
             'financial_status': {
                 'current_age': current_age,
@@ -883,7 +902,17 @@ class ToojaService:
                     inflation_rate
                 )
             },
-            'visual_summary': visual_output
+            'visual_summary': visual_output,
+            # KRX 실시간 데이터
+            'market_data': {
+                'market_overview': market_overview,
+                'investor_trading': investor_trading,
+            },
+            'etf_recommendations': {
+                'IRP': irp_etfs,
+                'ISA': isa_etfs,
+                'GENERAL': general_stocks,
+            }
         }
 
     def _generate_achievement_message(self, scenarios: dict, recommended_strategy: str,
@@ -1017,6 +1046,15 @@ class ToojaService:
             irp_account_result
         )
 
+        # ========== KRX 실시간 데이터 자동 통합 ==========
+        market_overview = self.get_market_overview()
+        investor_trading = self.get_investor_trading()
+
+        # 계좌별 구체적인 ETF 추천 (실시간 시세 포함)
+        irp_etfs = self.get_etf_recommendations('IRP')
+        isa_etfs = self.get_etf_recommendations('ISA')
+        general_stocks = self.get_etf_recommendations('GENERAL')
+
         return {
             'investment_summary': {
                 '투자기간': f'{investment_period_years}년',
@@ -1037,7 +1075,17 @@ class ToojaService:
                 irp_account_result,
                 monthly_investment
             ),
-            'visual_summary': visual_output
+            'visual_summary': visual_output,
+            # KRX 실시간 데이터
+            'market_data': {
+                'market_overview': market_overview,
+                'investor_trading': investor_trading,
+            },
+            'etf_recommendations': {
+                'IRP': irp_etfs,
+                'ISA': isa_etfs,
+                'GENERAL': general_stocks,
+            }
         }
 
     def _simulate_general_account(self, asset_investments: dict, expected_returns: dict,
@@ -1314,6 +1362,425 @@ class ToojaService:
 
         return recommendations
 
+    # ========== KRX 데이터 서비스 메서드 ==========
+
+    def get_market_overview(self) -> dict:
+        """
+        시장 전체 현황 조회 (KOSPI + KOSDAQ + 변동성)
+        실시간 KRX 데이터를 기반으로 시장 상태 및 포트폴리오 조정 권장사항 제공
+        """
+        overview = self.krx_service.get_market_overview()
+
+        # 시각화 추가
+        visual = "\n📊 시장 현황 요약\n" + "=" * 60 + "\n"
+        visual += f"KOSPI: {overview['kospi'].get('current_value', 'N/A'):,.0f} "
+        visual += f"({overview['kospi'].get('change_rate_30d', 0):+.1f}% / 30일)\n"
+        visual += f"KOSDAQ: {overview['kosdaq'].get('current_value', 'N/A'):,.0f} "
+        visual += f"({overview['kosdaq'].get('change_rate_30d', 0):+.1f}% / 30일)\n"
+        visual += "-" * 60 + "\n"
+        visual += f"시장 변동성: {overview['volatility'].get('volatility_annual', 'N/A'):.1f}% (연환산)\n"
+        visual += f"변동성 상태: {overview['volatility'].get('regime', 'N/A')}\n"
+        visual += f"시장 판단: {overview['market_status']} - {overview['market_comment']}\n"
+        visual += "-" * 60 + "\n"
+        adj = overview['portfolio_recommendation']
+        visual += f"포트폴리오 조정 권장:\n"
+        visual += f"  주식: {adj['stocks_adjustment']:+d}%p\n"
+        visual += f"  채권: {adj['bonds_adjustment']:+d}%p\n"
+        visual += f"  현금: {adj['cash_adjustment']:+d}%p\n"
+        visual += f"  사유: {adj['reason']}\n"
+
+        overview['visual_summary'] = visual
+        return overview
+
+    def get_market_volatility(self, days: int = 60) -> dict:
+        """
+        시장 변동성 조회 (KOSPI 기준)
+
+        Args:
+            days: 계산 기간 (기본 60일)
+
+        Returns:
+            변동성 데이터 및 포트폴리오 조정 권장사항
+        """
+        volatility = self.krx_service.get_market_volatility(days)
+
+        # 시각화 추가
+        visual = "\n📉 시장 변동성 분석\n" + "=" * 60 + "\n"
+        visual += f"연환산 변동성: {volatility.get('volatility_annual', 'N/A'):.2f}%\n"
+        visual += f"일간 변동성: {volatility.get('volatility_daily', 'N/A'):.4f}%\n"
+        visual += f"최근 20일 변동성: {volatility.get('recent_20d_volatility', 'N/A'):.2f}%\n"
+        visual += f"변동성 추세: {volatility.get('volatility_trend', 'N/A')}\n"
+        visual += "-" * 60 + "\n"
+        visual += f"변동성 상태: {volatility.get('regime', 'N/A')}\n"
+        visual += f"권장사항: {volatility.get('recommendation', 'N/A')}\n"
+
+        volatility['visual_summary'] = visual
+        return volatility
+
+    def get_etf_recommendations(self, account_type: str, asset_class: str = None,
+                                 sort_by: str = 'score', min_return: float = None,
+                                 top_n: int = None) -> dict:
+        """
+        계좌 유형별 ETF 추천 (기본 추천 + 실시간 스크리닝 통합)
+
+        Args:
+            account_type: 'IRP', 'ISA', 'GENERAL'
+            asset_class: 자산군 (선택) - '해외주식', '채권', '리츠', '금', '고배당', '대형주'
+            sort_by: 정렬 기준 - 'score'(추천점수), 'return_1y'(1년수익률), 'volatility'(변동성), 'sharpe_ratio'(샤프비율)
+            min_return: 최소 1년 수익률 필터 (%) - 예: 5.0 이면 5% 이상만 추천
+            top_n: 상위 N개만 추천 (기본: 전체)
+
+        Returns:
+            기본 추천 + 실시간 스크리닝 통합 ETF 리스트
+        """
+        recommendations = self.krx_service.get_etf_recommendations_by_account(
+            account_type, asset_class, sort_by, min_return, top_n
+        )
+
+        # 시각화 추가
+        account_names = {'IRP': 'IRP/연금저축', 'ISA': 'ISA', 'GENERAL': '일반계좌'}
+        visual = f"\n🎯 {account_names.get(account_type, account_type)} 추천 ETF/종목\n"
+        visual += "=" * 70 + "\n"
+
+        # 추천 기준 설명
+        sort_labels = {
+            'score': '종합 추천점수',
+            'return_1y': '1년 수익률',
+            'volatility': '변동성(낮은순)',
+            'sharpe_ratio': '샤프비율(위험조정수익)'
+        }
+        visual += f"📊 정렬 기준: {sort_labels.get(sort_by, sort_by)}\n"
+        visual += "💡 기본 추천(세금최적화) + 실시간 스크리닝 통합\n"
+        if min_return is not None:
+            visual += f"📉 최소 수익률 필터: {min_return}% 이상\n"
+        visual += "-" * 70 + "\n"
+
+        if asset_class:
+            visual += f"자산군: {asset_class}\n"
+            visual += "-" * 70 + "\n"
+
+        if not recommendations:
+            visual += "⚠️ 조건에 맞는 추천 종목이 없습니다.\n"
+        else:
+            # 소스별 카운트
+            curated_count = sum(1 for e in recommendations if e.get('source') == 'curated')
+            screening_count = sum(1 for e in recommendations if e.get('source') == 'screening')
+            visual += f"📋 기본추천: {curated_count}개 | 🔍 스크리닝: {screening_count}개\n"
+            visual += "-" * 70 + "\n"
+
+            for i, etf in enumerate(recommendations, 1):
+                # 순위 표시 (상위 3개는 메달)
+                rank_emoji = {1: '🥇', 2: '🥈', 3: '🥉'}.get(i, f'{i}.')
+                # 소스 표시
+                source_tag = '📋' if etf.get('source') == 'curated' else '🔍'
+                visual += f"{rank_emoji} {source_tag} {etf['name']} ({etf['ticker']})\n"
+                visual += f"   유형: {etf.get('type', 'ETF')}\n"
+
+                # 실시간 시세 정보
+                if etf.get('current_price'):
+                    visual += f"   💰 현재가: {etf['current_price']:,.0f}원\n"
+
+                # 수익률 정보
+                if etf.get('return_1y') is not None:
+                    return_emoji = '📈' if etf['return_1y'] > 0 else '📉'
+                    visual += f"   {return_emoji} 1년 수익률: {etf['return_1y']:+.1f}%\n"
+
+                if etf.get('return_1m') is not None:
+                    momentum_emoji = '🔥' if etf['return_1m'] > 3 else ('📊' if etf['return_1m'] > 0 else '❄️')
+                    visual += f"   {momentum_emoji} 최근 1개월: {etf['return_1m']:+.1f}%\n"
+
+                # 위험 지표
+                if etf.get('volatility'):
+                    vol_level = '낮음' if etf['volatility'] < 15 else ('보통' if etf['volatility'] < 25 else '높음')
+                    visual += f"   📊 변동성: {etf['volatility']:.1f}% ({vol_level})\n"
+
+                if etf.get('sharpe_ratio') is not None:
+                    sr_quality = '우수' if etf['sharpe_ratio'] > 0.5 else ('양호' if etf['sharpe_ratio'] > 0 else '부진')
+                    visual += f"   ⚖️ 샤프비율: {etf['sharpe_ratio']:.2f} ({sr_quality})\n"
+
+                # 추천 점수 및 이유
+                if etf.get('recommendation_score', 0) > 0:
+                    score_bar_len = int(etf['recommendation_score'] / 5)
+                    score_bar = '█' * score_bar_len + '░' * (20 - score_bar_len)
+                    visual += f"   ⭐ 추천점수: [{score_bar}] {etf['recommendation_score']:.0f}/100\n"
+
+                if etf.get('recommendation_reason'):
+                    visual += f"   💡 {etf['recommendation_reason']}\n"
+
+                visual += "\n"
+
+            # 요약 통계
+            valid_returns = [e['return_1y'] for e in recommendations if e.get('return_1y') is not None]
+            if valid_returns:
+                visual += "-" * 70 + "\n"
+                visual += f"📈 평균 1년 수익률: {sum(valid_returns)/len(valid_returns):+.1f}%\n"
+                visual += f"📊 최고 수익률: {max(valid_returns):+.1f}% | 최저: {min(valid_returns):+.1f}%\n"
+
+        # 데이터 출처 표시
+        visual += "\n" + "-" * 70 + "\n"
+        visual += "📋 = 세금최적화 기본추천 | 🔍 = 실시간 스크리닝 발굴\n"
+        if PYKRX_AVAILABLE:
+            visual += "📡 데이터 출처: KRX (pykrx 실시간)\n"
+        else:
+            visual += "⚠️ pykrx 미설치 - 실시간 데이터 없음 (pip install pykrx)\n"
+
+        return {
+            'account_type': account_type,
+            'asset_class': asset_class,
+            'sort_by': sort_by,
+            'min_return_filter': min_return,
+            'top_n': top_n,
+            'total_recommendations': len(recommendations),
+            'recommendations': recommendations,
+            'pykrx_available': PYKRX_AVAILABLE,
+            'visual_summary': visual
+        }
+
+    def get_stock_price(self, ticker: str, days: int = 30) -> dict:
+        """
+        개별 종목/ETF 시세 조회
+
+        Args:
+            ticker: 종목코드 (예: '005930' 삼성전자)
+            days: 조회 기간 (기본 30일)
+
+        Returns:
+            종목 시세 정보
+        """
+        result = self.krx_service.get_stock_price(ticker, days)
+
+        if 'error' in result:
+            return result
+
+        # 시각화 추가
+        visual = f"\n📈 {result['name']} ({result['ticker']}) 시세 정보\n"
+        visual += "=" * 60 + "\n"
+        visual += f"현재가: {result['current_price']:,}원\n"
+        visual += f"등락률({days}일): {result['change_rate']:+.2f}%\n"
+        visual += f"최고가({days}일): {result['high']:,}원\n"
+        visual += f"최저가({days}일): {result['low']:,}원\n"
+        visual += f"평균 거래량: {result['avg_volume']:,}주\n"
+        visual += f"기준일: {result['data_date']}\n"
+
+        result['visual_summary'] = visual
+        return result
+
+    def get_investor_trading(self, days: int = 5) -> dict:
+        """
+        투자자별 매매 동향 조회
+
+        Args:
+            days: 조회 기간 (기본 5일)
+
+        Returns:
+            외국인/기관/개인 순매수 현황
+        """
+        result = self.krx_service.get_investor_trading(days)
+
+        if 'error' in result:
+            return result
+
+        # 시각화 추가
+        visual = "\n👥 투자자별 매매 동향\n" + "=" * 60 + "\n"
+        visual += f"조회 기간: 최근 {result['period_days']}일\n"
+        visual += "-" * 60 + "\n"
+        visual += f"외국인 순매수: {result['foreign_net_buy']:+,}원\n"
+        visual += f"기관 순매수:   {result['institution_net_buy']:+,}원\n"
+        visual += f"개인 순매수:   {result['retail_net_buy']:+,}원\n"
+        visual += "-" * 60 + "\n"
+        visual += f"시장 센티먼트: {result['sentiment']}\n"
+        visual += f"분석: {result['comment']}\n"
+
+        result['visual_summary'] = visual
+        return result
+
+    def get_top_stocks_by_market_cap(self, market: str = 'ALL', top_n: int = 20,
+                                      include_performance: bool = True) -> dict:
+        """
+        시가총액 상위 종목 자동 추천 (실시간 KRX 데이터 기반)
+
+        Args:
+            market: 'KOSPI', 'KOSDAQ', 'ALL'
+            top_n: 상위 N개 종목
+            include_performance: 수익률/변동성 정보 포함
+
+        Returns:
+            시가총액 상위 종목 리스트
+        """
+        recommendations = self.krx_service.get_top_stocks_by_market_cap(
+            market, top_n, include_performance
+        )
+
+        # 에러 체크
+        if recommendations and 'error' in recommendations[0]:
+            return {'error': recommendations[0]['error']}
+
+        # 시각화 추가
+        market_labels = {'KOSPI': 'KOSPI', 'KOSDAQ': 'KOSDAQ', 'ALL': 'KOSPI+KOSDAQ'}
+        visual = f"\n🏆 {market_labels.get(market, market)} 시가총액 상위 {top_n}개 종목\n"
+        visual += "=" * 80 + "\n"
+        visual += "📊 실시간 KRX 데이터 기반 (하드코딩 아님)\n"
+        visual += "-" * 80 + "\n"
+
+        for i, stock in enumerate(recommendations, 1):
+            rank_emoji = {1: '🥇', 2: '🥈', 3: '🥉'}.get(i, f'{i}.')
+            visual += f"{rank_emoji} {stock['name']} ({stock['ticker']}) - {stock['market']}\n"
+            visual += f"   💰 현재가: {stock['current_price']:,}원\n"
+            visual += f"   📊 시가총액: {stock['market_cap_billion']:.1f}조원\n"
+
+            if stock.get('return_1y') is not None:
+                return_emoji = '📈' if stock['return_1y'] > 0 else '📉'
+                visual += f"   {return_emoji} 1년 수익률: {stock['return_1y']:+.1f}%\n"
+
+            if stock.get('return_1m') is not None:
+                momentum_emoji = '🔥' if stock['return_1m'] > 3 else ('📊' if stock['return_1m'] > 0 else '❄️')
+                visual += f"   {momentum_emoji} 최근 1개월: {stock['return_1m']:+.1f}%\n"
+
+            if stock.get('volatility'):
+                vol_level = '낮음' if stock['volatility'] < 25 else ('보통' if stock['volatility'] < 35 else '높음')
+                visual += f"   📉 변동성: {stock['volatility']:.1f}% ({vol_level})\n"
+
+            if stock.get('recommendation_score', 0) > 0:
+                score_bar_len = int(stock['recommendation_score'] / 5)
+                score_bar = '█' * score_bar_len + '░' * (20 - score_bar_len)
+                visual += f"   ⭐ 추천점수: [{score_bar}] {stock['recommendation_score']:.0f}/100\n"
+
+            if stock.get('recommendation_reason'):
+                visual += f"   💡 {stock['recommendation_reason']}\n"
+
+            visual += "\n"
+
+        # 요약 통계
+        valid_returns = [s['return_1y'] for s in recommendations if s.get('return_1y') is not None]
+        if valid_returns:
+            visual += "-" * 80 + "\n"
+            visual += f"📈 평균 1년 수익률: {sum(valid_returns)/len(valid_returns):+.1f}%\n"
+            total_market_cap = sum(s['market_cap_billion'] for s in recommendations)
+            visual += f"📊 총 시가총액: {total_market_cap:.1f}조원\n"
+
+        visual += "\n" + "-" * 80 + "\n"
+        visual += "📡 데이터 출처: KRX (pykrx 실시간)\n"
+
+        return {
+            'market': market,
+            'top_n': top_n,
+            'total_recommendations': len(recommendations),
+            'recommendations': recommendations,
+            'pykrx_available': PYKRX_AVAILABLE,
+            'visual_summary': visual
+        }
+
+    def get_top_etfs_by_performance(self, top_n: int = 20, min_volume: int = 10000,
+                                     sort_by: str = 'return_1y') -> dict:
+        """
+        전체 ETF 중 수익률 상위 종목 자동 스크리닝 (하드코딩 아님)
+
+        Args:
+            top_n: 상위 N개 ETF
+            min_volume: 최소 일평균 거래량 (유동성 필터)
+            sort_by: 정렬 기준 ('return_1y', 'return_1m', 'sharpe_ratio')
+
+        Returns:
+            수익률 상위 ETF 리스트
+        """
+        recommendations = self.krx_service.get_top_etfs_by_performance(
+            top_n, min_volume, sort_by
+        )
+
+        # 에러 체크
+        if recommendations and 'error' in recommendations[0]:
+            return {'error': recommendations[0]['error']}
+
+        # 시각화 추가
+        sort_labels = {
+            'return_1y': '1년 수익률',
+            'return_1m': '1개월 수익률',
+            'sharpe_ratio': '샤프비율(위험조정수익)'
+        }
+        visual = f"\n🎯 전체 ETF 수익률 상위 {top_n}개 (자동 스크리닝)\n"
+        visual += "=" * 80 + "\n"
+        visual += f"📊 정렬 기준: {sort_labels.get(sort_by, sort_by)}\n"
+        visual += f"📉 최소 거래량: {min_volume:,}주 이상\n"
+        visual += "💡 하드코딩 아님 - KRX 전체 ETF 실시간 스캔\n"
+        visual += "-" * 80 + "\n"
+
+        for i, etf in enumerate(recommendations, 1):
+            rank_emoji = {1: '🥇', 2: '🥈', 3: '🥉'}.get(i, f'{i}.')
+            visual += f"{rank_emoji} {etf['name']} ({etf['ticker']})\n"
+
+            if etf.get('current_price'):
+                visual += f"   💰 현재가: {etf['current_price']:,.0f}원\n"
+
+            if etf.get('return_1y') is not None:
+                return_emoji = '📈' if etf['return_1y'] > 0 else '📉'
+                visual += f"   {return_emoji} 1년 수익률: {etf['return_1y']:+.1f}%\n"
+
+            if etf.get('return_1m') is not None:
+                momentum_emoji = '🔥' if etf['return_1m'] > 3 else ('📊' if etf['return_1m'] > 0 else '❄️')
+                visual += f"   {momentum_emoji} 최근 1개월: {etf['return_1m']:+.1f}%\n"
+
+            if etf.get('volatility'):
+                vol_level = '낮음' if etf['volatility'] < 15 else ('보통' if etf['volatility'] < 25 else '높음')
+                visual += f"   📊 변동성: {etf['volatility']:.1f}% ({vol_level})\n"
+
+            if etf.get('sharpe_ratio') is not None:
+                sr_quality = '우수' if etf['sharpe_ratio'] > 0.5 else ('양호' if etf['sharpe_ratio'] > 0 else '부진')
+                visual += f"   ⚖️ 샤프비율: {etf['sharpe_ratio']:.2f} ({sr_quality})\n"
+
+            if etf.get('avg_volume'):
+                visual += f"   📊 일평균거래량: {etf['avg_volume']:,}주\n"
+
+            if etf.get('recommendation_score', 0) > 0:
+                score_bar_len = int(etf['recommendation_score'] / 5)
+                score_bar = '█' * score_bar_len + '░' * (20 - score_bar_len)
+                visual += f"   ⭐ 추천점수: [{score_bar}] {etf['recommendation_score']:.0f}/100\n"
+
+            if etf.get('recommendation_reason'):
+                visual += f"   💡 {etf['recommendation_reason']}\n"
+
+            visual += "\n"
+
+        # 요약 통계
+        valid_returns = [e['return_1y'] for e in recommendations if e.get('return_1y') is not None]
+        if valid_returns:
+            visual += "-" * 80 + "\n"
+            visual += f"📈 평균 1년 수익률: {sum(valid_returns)/len(valid_returns):+.1f}%\n"
+            visual += f"📊 최고 수익률: {max(valid_returns):+.1f}% | 최저: {min(valid_returns):+.1f}%\n"
+
+        visual += "\n" + "-" * 80 + "\n"
+        visual += "📡 데이터 출처: KRX 전체 ETF 실시간 스캔 (pykrx)\n"
+
+        return {
+            'sort_by': sort_by,
+            'min_volume': min_volume,
+            'top_n': top_n,
+            'total_recommendations': len(recommendations),
+            'recommendations': recommendations,
+            'pykrx_available': PYKRX_AVAILABLE,
+            'visual_summary': visual
+        }
+
+    def adjust_portfolio_with_realtime_volatility(self, base_portfolio: dict) -> dict:
+        """
+        실시간 변동성 기반 포트폴리오 조정 (KRX 데이터 활용)
+
+        Args:
+            base_portfolio: 기본 포트폴리오 (asset_allocation 포함)
+
+        Returns:
+            변동성 조정된 포트폴리오
+        """
+        # 실시간 변동성 조회
+        volatility_data = self.krx_service.get_market_volatility()
+
+        # 기존 변동성 조정 로직 호출
+        market_volatility_data = {
+            'current_volatility': volatility_data.get('volatility_annual', 22.0),
+            'historical_average': 22.0  # 하드코딩된 평균값
+        }
+
+        return self.adjust_portfolio_volatility(base_portfolio, market_volatility_data)
+
 
 # ========== MCP Server 설정 ==========
 
@@ -1477,6 +1944,151 @@ async def serve() -> None:
                     },
                     "required": ["investment_period_years", "monthly_investment", "asset_allocation"]
                 }
+            ),
+            # ========== KRX 데이터 도구 ==========
+            Tool(
+                name=ToojaTools.GET_MARKET_OVERVIEW.value,
+                description="📊 시장 전체 현황 조회 - KOSPI/KOSDAQ 지수, 변동성, 시장 상태 및 포트폴리오 조정 권장사항 (pykrx 사용)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            ),
+            Tool(
+                name=ToojaTools.GET_MARKET_VOLATILITY.value,
+                description="📉 시장 변동성 조회 - KOSPI 기준 연환산 변동성 계산, 변동성 상태(HIGH/NORMAL/LOW) 판단 및 포트폴리오 조정 권장 (pykrx 사용)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "number",
+                            "description": "변동성 계산 기간 (일, 기본값: 60)",
+                            "default": 60
+                        }
+                    },
+                    "required": []
+                }
+            ),
+            Tool(
+                name=ToojaTools.GET_ETF_RECOMMENDATIONS.value,
+                description="🎯 계좌 유형별 ETF/종목 추천 - 세금최적화 기본추천 + 실시간 스크리닝 통합. IRP(해외ETF, 채권), ISA(고배당), 일반계좌(국내주식) 최적 상품을 수익률/변동성/샤프비율 기준으로 정렬. 📋기본추천 + 🔍실시간발굴 통합 (pykrx)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "account_type": {
+                            "type": "string",
+                            "description": "계좌 유형: 'IRP', 'ISA', 'GENERAL'",
+                            "enum": ["IRP", "ISA", "GENERAL"]
+                        },
+                        "asset_class": {
+                            "type": "string",
+                            "description": "자산군 (선택): IRP-'해외주식','채권','리츠','금' / ISA-'고배당' / GENERAL-'대형주'"
+                        },
+                        "sort_by": {
+                            "type": "string",
+                            "description": "정렬 기준: 'score'(종합추천점수), 'return_1y'(1년수익률순), 'volatility'(낮은변동성순), 'sharpe_ratio'(샤프비율순)",
+                            "enum": ["score", "return_1y", "volatility", "sharpe_ratio"],
+                            "default": "score"
+                        },
+                        "min_return": {
+                            "type": "number",
+                            "description": "최소 1년 수익률 필터 (%) - 예: 5.0 입력 시 5% 이상 수익률 종목만 추천"
+                        },
+                        "top_n": {
+                            "type": "number",
+                            "description": "상위 N개 종목만 추천 (기본: 전체)"
+                        }
+                    },
+                    "required": ["account_type"]
+                }
+            ),
+            Tool(
+                name=ToojaTools.GET_STOCK_PRICE.value,
+                description="📈 개별 종목/ETF 시세 조회 - 종목코드로 현재가, 등락률, 거래량 등 조회 (pykrx 사용)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "ticker": {
+                            "type": "string",
+                            "description": "종목코드 (예: '005930' 삼성전자, '379800' KODEX 미국S&P500TR)"
+                        },
+                        "days": {
+                            "type": "number",
+                            "description": "조회 기간 (일, 기본값: 30)",
+                            "default": 30
+                        }
+                    },
+                    "required": ["ticker"]
+                }
+            ),
+            Tool(
+                name=ToojaTools.GET_INVESTOR_TRADING.value,
+                description="👥 투자자별 매매 동향 - 외국인/기관/개인 순매수 현황 및 시장 센티먼트 분석 (pykrx 사용)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "number",
+                            "description": "조회 기간 (일, 기본값: 5)",
+                            "default": 5
+                        }
+                    },
+                    "required": []
+                }
+            ),
+            # ========== 신규: 실시간 시장 스크리닝 도구 ==========
+            Tool(
+                name=ToojaTools.GET_TOP_STOCKS_BY_MARKET_CAP.value,
+                description="🏆 시가총액 상위 종목 자동 추천 - KRX 전체 종목 실시간 스캔. 하드코딩 아님! KOSPI/KOSDAQ 시총 상위 종목을 1년 수익률/변동성과 함께 자동 추천 (pykrx 실시간)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "market": {
+                            "type": "string",
+                            "description": "시장: 'KOSPI', 'KOSDAQ', 'ALL'(전체)",
+                            "enum": ["KOSPI", "KOSDAQ", "ALL"],
+                            "default": "ALL"
+                        },
+                        "top_n": {
+                            "type": "number",
+                            "description": "상위 N개 종목 (기본: 20)",
+                            "default": 20
+                        },
+                        "include_performance": {
+                            "type": "boolean",
+                            "description": "수익률/변동성 정보 포함 여부 (기본: true)",
+                            "default": True
+                        }
+                    },
+                    "required": []
+                }
+            ),
+            Tool(
+                name=ToojaTools.GET_TOP_ETFS_BY_PERFORMANCE.value,
+                description="🎯 전체 ETF 수익률 상위 자동 스크리닝 - KRX 전체 ETF 실시간 스캔! 하드코딩 아님! 1년/1개월 수익률, 샤프비율 기준 상위 ETF 자동 발굴 (pykrx 실시간)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "top_n": {
+                            "type": "number",
+                            "description": "상위 N개 ETF (기본: 20)",
+                            "default": 20
+                        },
+                        "min_volume": {
+                            "type": "number",
+                            "description": "최소 일평균 거래량 - 유동성 필터 (기본: 10000)",
+                            "default": 10000
+                        },
+                        "sort_by": {
+                            "type": "string",
+                            "description": "정렬 기준: 'return_1y'(1년수익률), 'return_1m'(1개월수익률), 'sharpe_ratio'(샤프비율)",
+                            "enum": ["return_1y", "return_1m", "sharpe_ratio"],
+                            "default": "return_1y"
+                        }
+                    },
+                    "required": []
+                }
             )
         ]
 
@@ -1544,6 +2156,50 @@ async def serve() -> None:
                         arguments['monthly_investment'],
                         arguments['asset_allocation'],
                         arguments.get('expected_returns', None)
+                    )
+
+                # ========== KRX 데이터 도구 핸들러 ==========
+                case ToojaTools.GET_MARKET_OVERVIEW.value:
+                    result = service.get_market_overview()
+
+                case ToojaTools.GET_MARKET_VOLATILITY.value:
+                    result = service.get_market_volatility(
+                        arguments.get('days', 60)
+                    )
+
+                case ToojaTools.GET_ETF_RECOMMENDATIONS.value:
+                    result = service.get_etf_recommendations(
+                        arguments['account_type'],
+                        arguments.get('asset_class', None),
+                        arguments.get('sort_by', 'score'),
+                        arguments.get('min_return', None),
+                        arguments.get('top_n', None)
+                    )
+
+                case ToojaTools.GET_STOCK_PRICE.value:
+                    result = service.get_stock_price(
+                        arguments['ticker'],
+                        arguments.get('days', 30)
+                    )
+
+                case ToojaTools.GET_INVESTOR_TRADING.value:
+                    result = service.get_investor_trading(
+                        arguments.get('days', 5)
+                    )
+
+                # ========== 신규: 실시간 시장 스크리닝 도구 핸들러 ==========
+                case ToojaTools.GET_TOP_STOCKS_BY_MARKET_CAP.value:
+                    result = service.get_top_stocks_by_market_cap(
+                        arguments.get('market', 'ALL'),
+                        arguments.get('top_n', 20),
+                        arguments.get('include_performance', True)
+                    )
+
+                case ToojaTools.GET_TOP_ETFS_BY_PERFORMANCE.value:
+                    result = service.get_top_etfs_by_performance(
+                        arguments.get('top_n', 20),
+                        arguments.get('min_volume', 10000),
+                        arguments.get('sort_by', 'return_1y')
                     )
 
                 case _:

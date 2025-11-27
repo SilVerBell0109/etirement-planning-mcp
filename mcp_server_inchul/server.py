@@ -1,30 +1,24 @@
-from datetime import datetime
 from enum import Enum
 import json
 from typing import Sequence
-import numpy as np
 import sys
 import os
 
 # 중앙 설정 모듈 import
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
-from financial_constants_2025 import KOR_2025, marginal_rate_from_brackets, get_healthcare_factor # type: ignore
+from financial_constants_2025 import KOR_2025, marginal_rate_from_brackets, get_healthcare_factor  # type: ignore
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
-from mcp.shared.exceptions import McpError
-
-from pydantic import BaseModel
 
 # __pycache__ 폴더 생성 방지
 sys.dont_write_bytecode = True
+
+
 class InchulTools(str, Enum):
     GENERATE_COMPREHENSIVE_PLAN = "generate_comprehensive_withdrawal_plan"
     COMPARE_TAX_EFFICIENCY = "compare_tax_efficiency_across_accounts"
-
-
-# ========== 데이터 모델 (필요시 추가 가능) ==========
 
 
 # ========== 금융 계산 엔진 ==========

@@ -1,33 +1,52 @@
 # docker-compose.yml
-version: '3.8'
+# 은퇴 플래닝 MCP 서버 - 로컬 개발/테스트용
 
 services:
+  # 적립메이트 (Jeoklip) - 은퇴자금 계산
   jeoklip:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVER: jeoklip
+    image: silverbell/retirement-mcp:jeoklip
     container_name: mcp-jeoklip
-    command: python -m mcp_server_jeoklip
-    volumes:
-      - ./config:/app/config:ro
+    environment:
+      - MCP_SERVER=jeoklip
     stdin_open: true
-    tty: true
-    restart: unless-stopped
+    tty: false
+    restart: "no"
 
+  # 투자메이트 (Tooja) - 포트폴리오 & pykrx 시장데이터
   tooja:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVER: tooja
+    image: silverbell/retirement-mcp:tooja
     container_name: mcp-tooja
-    command: python -m mcp_server_tooja
-    volumes:
-      - ./config:/app/config:ro
+    environment:
+      - MCP_SERVER=tooja
     stdin_open: true
-    tty: true
-    restart: unless-stopped
+    tty: false
+    restart: "no"
 
+  # 인출메이트 (Inchul) - 은퇴 후 인출 전략
   inchul:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVER: inchul
+    image: silverbell/retirement-mcp:inchul
     container_name: mcp-inchul
-    command: python -m mcp_server_inchul
-    volumes:
-      - ./config:/app/config:ro
+    environment:
+      - MCP_SERVER=inchul
     stdin_open: true
-    tty: true
-    restart: unless-stopped
+    tty: false
+    restart: "no"
+
+networks:
+  default:
+    name: retirement-mcp-network

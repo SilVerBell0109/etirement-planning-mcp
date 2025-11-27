@@ -1,4 +1,24 @@
+# requirements.txt
+# 은퇴 플래닝 MCP 서버 의존성
+
+# MCP 프레임워크
 mcp>=0.9.0
+
+# 데이터 검증
 pydantic>=2.0.0
+
+# 수치 계산
 numpy>=1.24.0
+
+# 시각화 (선택적)
 matplotlib>=3.7.0
+
+# 한국거래소 데이터 (투자메이트 핵심)
+pykrx>=1.0.0
+
+# pykrx 의존성 - pkg_resources 경고 해결
+setuptools>=70.0.0
+
+# 추가 유틸리티 (필요시 주석 해제)
+# pandas>=2.0.0
+# requests>=2.31.0

@@ -12,12 +12,11 @@ sys.dont_write_bytecode = True
 
 # 중앙 설정 모듈 import
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
-from financial_constants_2025 import KOR_2025 # type: ignore
+from financial_constants_2025 import KOR_2025  # type: ignore
 
 from mcp.server import Server  # type: ignore
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
-from mcp.shared.exceptions import McpError
 
 
 class JeoklipTools(str, Enum):
